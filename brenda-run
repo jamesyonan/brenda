@@ -1,0 +1,136 @@
+#!/usr/bin/python
+
+# Brenda -- Blender render tool for Amazon Web Services
+# Copyright (C) 2013 James Yonan <james@openvpn.net>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys, os, optparse
+from brenda import config, run
+
+def main():
+    usage = """\
+usage: %s [options] demand|spot|price|stop|cancel|status|init
+Synopsis:
+  Start an EC2 on-demand or spot instance.
+Commands:
+  spot   : queue a request to start a lower-cost "spot" instance at
+           a specified maximum cost per hour.
+  price  : show current spot prices.
+  demand : start a higher-cost "on-demand" instance.
+  stop   : stop all running EC2 instances (less fine-grained than
+           "brenda-tool prune").
+  cancel : cancel all spot requests.
+  status : show status of current EC2 spot requests and instances.
+  init   : do one-time initialization of new AWS account by creating
+           "brenda" SSH key name and Security Group.
+Required config vars:
+  AWS_ACCESS_KEY : Amazon Web Services access key.
+  AWS_SECRET_KEY : Amazon Web Services secret key.
+  SSH_PUBKEY     : SSH public key that created EC2 instances will recognize
+                   as an authorized key.  Defaults to $HOME/.ssh/id_rsa.pub
+  AMI_ID : Amazon ID of AMI that will be started.  This should be an AMI
+           that already has Brenda pre-installed.
+  BLENDER_PROJECT : directory containing .blend file and all supporting files
+                    for render.  May be a compressed file on S3 in zip format
+                    or any format supported by tar, i.e.
+                    s3://BUCKET/myproject.zip, or local directory on render
+                    farm node i.e. file:///my/local/blender/project
+  WORK_QUEUE : name of SQS queue (e.g. sqs://QUEUE) containing render
+               work.
+  RENDER_OUTPUT : render farm will save render output to this S3 bucket/prefix,
+                  e.g. s3://BUCKET or s3://BUCKET/PREFIX
+Optional config vars:
+  EC2_REGION : EC2 region name, defaults to US standard (optional).
+  INSTANCE_TYPE : EC2 instance type.
+  BID_PRICE : maximum spot market bid price for EC2 instance in dollars per
+              hour.  Must be specified on the command line, if not specified
+              as a config variable.
+  SSH_KEY_NAME : EC2 ssh key name, default='brenda'
+  SECURITY_GROUP : EC2 security group, default='brenda'
+  [Note: all optional vars supported by brenda-node can also be specified here]
+Examples:
+  Show current running EC2 instances and spot requests.
+    $ brenda-run status
+  Show current spot market prices for configured instance type:
+    $ brenda-run price
+  Start 4 default instances on EC2 spot market at a maximum price
+  of $0.07 per instance-hour:
+    $ brenda-run -N 4 -p 0.07 spot
+  Start 4 default instances on EC2 using higher on-demand pricing:
+    $ brenda-run -N 4 demand
+  Stop all running Brenda EC2 instances in this account:
+    $ brenda-run stop
+  Cancel all spot-requests:
+    $ brenda-run cancel""" % (sys.argv[0])
+    parser = optparse.OptionParser(usage)
+    parser.disable_interspersed_args()
+
+    home = os.path.expanduser("~")
+    defconf = os.path.join(home, ".brenda.conf")
+
+    parser.add_option("-c", "--config", dest="config", default=defconf,
+                      help="Configuration file (default: %default)")
+
+    parser.add_option("-a", "--ami", dest="ami",
+                      help="AMI ID to use when starting EC2 instances, overrides config variable AMI_ID")
+    parser.add_option("-N", "--n-instances", type="int", dest="n_instances", default=1,
+                      help="Number of EC2 instances to start, default=%default")
+    parser.add_option("-i", "--instance-type", dest="instance_type", default="c1.xlarge",
+                      help="EC2 instance type, overrides config variable INSTANCE_TYPE, default=%default")
+    parser.add_option("-p", "--price", dest="price",
+                      help="Maximum price in dollars per hour to bid on spot instances, overrides config variable BID_PRICE")
+    parser.add_option("-P", "--persistent", action="store_true", dest="persistent",
+                      help="Make spot requests persistent")
+    parser.add_option("-T", "--terminate", action="store_true", dest="terminate",
+                      help="For stop, terminate EC2 instances instead of stopping them (required for spot instances)")
+    parser.add_option("-I", "--idle", action="store_true", dest="idle",
+                      help="Start the EC2 instances in the idle state, without automatically running brenda-node to begin task processing")
+    parser.add_option("-t", "--threshold", type="int", dest="threshold", default=0,
+                      help="Match only on instances whose uptime is > n minutes after the hour, default=%default")
+
+    parser.add_option("-d", "--dry-run", action="store_true", dest="dry_run",
+                      help="show what would be done without actually doing it")
+
+    # Get command line arguments...
+    ( opts, args ) = parser.parse_args()
+    #print "OPTS", (opts, args)
+    if not args:
+        print >>sys.stderr, "no work, run with -h for usage"
+        sys.exit(2)
+
+    # Get configuration
+    conf = config.Config(opts.config, 'BRENDA_')
+    #print "CONFIG", conf
+
+    # dispatch
+    if args[0] == 'demand':
+        run.demand(opts, conf)
+    elif args[0] == 'spot':
+        run.spot(opts, conf)
+    elif args[0] == 'price':
+        run.price(opts, conf)
+    elif args[0] == 'stop':
+        run.stop(opts, conf)
+    elif args[0] == 'cancel':
+        run.cancel(opts, conf)
+    elif args[0] == 'status':
+        run.status(opts, conf)
+    elif args[0] == 'init':
+        run.init(opts, conf)
+    else:
+        print >>sys.stderr, "unrecognized command:", args[0]
+        sys.exit(2)
+
+main()

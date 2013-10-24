@@ -1,0 +1,9 @@
+cat >subframe.py <<EOF
+import bpy
+bpy.context.scene.render.border_min_x = $SF_MIN_X
+bpy.context.scene.render.border_max_x = $SF_MAX_X
+bpy.context.scene.render.border_min_y = $SF_MIN_Y
+bpy.context.scene.render.border_max_y = $SF_MAX_Y
+bpy.context.scene.render.use_border = True
+EOF
+blender -b *.blend -P subframe.py -F PNG -o $OUTDIR/frame_######_X-$SF_MIN_X-$SF_MAX_X-Y-$SF_MIN_Y-$SF_MAX_Y $FRAME -t 0 -a

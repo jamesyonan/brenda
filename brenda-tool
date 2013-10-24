@@ -1,0 +1,128 @@
+#!/usr/bin/python
+
+# Brenda -- Blender render tool for Amazon Web Services
+# Copyright (C) 2013 James Yonan <james@openvpn.net>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys, os, optparse
+from brenda import config, tool
+
+def main():
+    usage = """\
+usage: %s [options] ssh|rsync|instances|prune [args...]
+Synopsis:
+  Manage EC2 instances in the render farm.
+Commands:
+  ssh [args...]   : run ssh command on all instances and show the output.
+  rsync [args...] : rsync file(s) to/from all instances, use "HOST" as
+                    a macro for instance hostname.
+  instances       : show all instances and their uptime.
+  prune <N_remaining> : kill running instances such that only N_remaining
+                        instances will be retained.  Brenda uses a smart
+                        algorithm to decide which instances to kill
+                        (if N_remaining > 0) by selecting instances that
+                        have most recently finished a task to minimize
+                        the amount of lost work.
+Command abbreviations:
+  brenda-tool commands can be abbreviated by their first letter:
+    s : ssh
+    r : rsync
+    i : instances
+    p : prune
+Required config vars:
+  AWS_ACCESS_KEY : Amazon Web Services access key.
+  AWS_SECRET_KEY : Amazon Web Services secret key.
+Optional config vars:
+  SSH_IDENTITY   : SSH identity file to access EC2 nodes, defaults to
+                   $HOME/.ssh/id_rsa
+  EC2_REGION : EC2 region name, defaults to US standard (optional).
+  AMI_ID : Amazon ID of render-farm AMI, to cause tool to filter all node
+           queries except for those running this AMI (optional).  This is
+           useful if you have other EC2 instances running in your AWS
+           account that are not associated with Brenda.
+  AWS_USER : username when accessing AWS node (optional).
+  TOOL_THREADS : max number of simultaneous threads to use when querying
+                 multiple render farm instances (default=64).
+  REMOTE_PIDFILE : pid file name used on remote render farm nodes
+                   (default="brenda.pid").
+Examples:
+  Copy Brenda configuration file to all running instances:
+    $ brenda-tool rsync ~/.brenda.conf HOST:
+  Start render on all instances using config file pushed in previous step:
+    $ brenda-tool ssh 'brenda-node -D -c .brenda.conf'
+  View the tail of the log file on each instance:
+    $ brenda-tool ssh tail log
+  Run the 'uptime' command on each instance to view CPU utilization:
+    $ brenda-tool ssh uptime
+  Enumerate active EC2 instances:
+    $ brenda-tool instances
+  Stop the brenda-node script on all instances, but don't shut down the
+  instances:
+    $ brenda-tool ssh 'kill $(cat brenda.pid)'
+  Suppose that you are running a render on 64 instances, the render is almost
+  (but not quite) complete, and the instances are about to begin their next
+  billable hour of operation.  64 instances running over the next hour would
+  be overkill to finish the render job, so you want to scale back the number
+  of instances to 16:
+    $ brenda-tool prune 16""" % (sys.argv[0])
+    parser = optparse.OptionParser(usage)
+    parser.disable_interspersed_args()
+
+    home = os.path.expanduser("~")
+    defconf = os.path.join(home, ".brenda.conf")
+
+    parser.add_option("-c", "--config", dest="config", default=defconf,
+                      help="Configuration file (default: %default)")
+
+    parser.add_option("-u", "--user", dest="user",
+                      help="Username to use when logging into remote EC2 nodes, overrides environmental variable AWS_USER")
+    parser.add_option("-n", "--host", dest="host",
+                      help="ssh/rsync on specific host")
+    parser.add_option("-H", "--hosts-file", dest="hosts_file",
+                      help="ssh/rsync on hosts listed in file")
+    parser.add_option("-a", "--ami", dest="ami",
+                      help="AMI ID of instances to match on, overrides config variable AMI_ID")
+    parser.add_option("-t", "--threshold", type="int", dest="threshold", default=0,
+                      help="Match only on instances whose uptime is > n minutes after the hour, default=%default")
+    parser.add_option("-T", "--terminate", action="store_true", dest="terminate",
+                      help="For prune, terminate instances instead of stopping them (required for AWS spot instances)")
+    parser.add_option("-d", "--dry-run", action="store_true", dest="dry_run",
+                      help="For prune, show what would be done without actually doing it")
+
+    # Get command line arguments...
+    ( opts, args ) = parser.parse_args()
+    #print "OPTS", (opts, args)
+    if not args:
+        print >>sys.stderr, "no work, run with -h for usage"
+        sys.exit(2)
+
+    # Get configuration
+    conf = config.Config(opts.config, 'BRENDA_')
+    #print "CONFIG", conf
+
+    # dispatch
+    if args[0] == 'instances' or args[0] == 'i':
+        tool.instances(opts, conf)
+    elif args[0] == 'ssh' or args[0] == 's':
+        tool.ssh(opts, conf, args[1:])
+    elif args[0] == 'rsync' or args[0] == 'r':
+        tool.rsync(opts, conf, args[1:])
+    elif args[0] == 'prune' or args[0] == 'p':
+        tool.prune(opts, conf, args[1:])
+    else:
+        print >>sys.stderr, "unrecognized command:", args[0]
+        sys.exit(2)
+
+main()

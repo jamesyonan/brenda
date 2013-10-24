@@ -1,0 +1,97 @@
+#!/usr/bin/python -u
+
+# Brenda -- Blender render tool for Amazon Web Services
+# Copyright (C) 2013 James Yonan <james@openvpn.net>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys, optparse
+from brenda import config, daemon, node
+
+def main():
+    usage = """\
+usage: %s [options]
+Synopsis:
+  Render farm node worker that reads blender project, executes render tasks
+  from the work queue, and saves the render output in an S3 bucket. 
+Required config vars:
+  AWS_ACCESS_KEY : Amazon Web Services access key.
+  AWS_SECRET_KEY : Amazon Web Services secret key.
+  BLENDER_PROJECT : directory containing .blend file and all supporting files
+                    for render.  May be a compressed file on S3 in zip format
+                    or any format supported by tar, i.e.
+                    s3://BUCKET/myproject.zip, or local directory on render
+                    farm node i.e. file:///my/local/blender/project
+  WORK_QUEUE : name of SQS queue (e.g. sqs://QUEUE) containing render
+               work.
+  RENDER_OUTPUT : render farm will save render output to this S3 bucket/prefix,
+                  e.g. s3://BUCKET or s3://BUCKET/PREFIX
+Optional config vars:
+  S3_REGION  : S3 region name, defaults to US standard.
+  SQS_REGION : SQS region name, defaults to US standard.
+  CURL_MAX_THREADS : max number of simultaneous threads to use when fetching
+                     project bundle from S3 (default=16).
+  CURL_N_RETRIES : max number of retries on error when fetching project bundle
+                   from S3 (default=4).
+  CURL_DEBUG : curl debug verbosity level (default=1).
+  VISIBILITY_TIMEOUT : SQS visibility timeout in seconds (default=120).
+                       SQS will return a task to the queue if the node worker
+                       doesn't acknowledge or complete the pending task over
+                       this period of time.
+  VISIBILITY_TIMEOUT_REASSERT : frequency in seconds, while working on task,
+                                that render farm will reassert with SQS that
+                                task is still pending (default=30).  This value
+                                must be less than VISIBILITY_TIMEOUT.
+  N_RETRIES : number of retries on general errors before fail (default=5).
+  ERROR_PAUSE : number of seconds to pause after general error (default=30).
+  RESET_PERIOD : period of time in seconds before retry counter is reset
+                 (default=3600).
+  BLENDER_PROJECT_ALWAYS_REFETCH : boolean (0|1, default=0) that indicates
+                    whether S3-based projects should always be refetched by
+                    the render node on startup (1), or whether the project
+                    should be locally cached and only refetched when
+                    modified (0).
+  WORK_DIR : local work directory used by render farm node, defaults to HOME
+             directory.
+  SHUTDOWN : shut down the instance on completion of all tasks (0|1, default=0).""" % (sys.argv[0])
+    parser = optparse.OptionParser(usage)
+
+    parser.add_option("-c", "--config", dest="config",
+                      help="Configuration file (by default read from stdin)")
+    parser.add_option("-D", "--daemon", action="store_true", dest="daemon",
+                      help="Run as a daemon")
+    parser.add_option("-l", "--log", dest="log", default="log",
+                      help="Log to file when running as a daemon, default=%default")
+    parser.add_option("-p", "--pidfile", dest="pidfile", default="brenda.pid",
+                      help="Write process ID to this file when running as a daemon, default=%default")
+    parser.add_option("-S", "--shutdown", action="store_true", dest="shutdown",
+                      help="Shut down the instance on completion of all tasks")
+
+    # Get command line arguments...
+    ( opts, args ) = parser.parse_args()
+    #print "OPTS", (opts, args)
+
+    # Get configuration
+    conf = config.Config(opts.config, 'BRENDA_', default_stdin=True)
+    #print "CONFIG", conf
+
+    # dispatch
+    func = lambda : node.run_tasks(opts, args, conf)
+    if opts.daemon:
+        i = daemon.Instance(func, opts.log, opts.pidfile)
+        i.start()
+    else:
+        func()
+
+main()

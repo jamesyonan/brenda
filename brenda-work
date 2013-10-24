@@ -1,0 +1,120 @@
+#!/usr/bin/python
+
+# Brenda -- Blender render tool for Amazon Web Services
+# Copyright (C) 2013 James Yonan <james@openvpn.net>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys, os, optparse
+from brenda import config, work
+
+def main():
+    usage = """"\
+usage: %s [options] push|status|reset
+Synopsis:
+  Manage render farm work queue.
+Commands:
+  push   : push tasks to SQS queue to be executed by render farm.
+  status : show the number of outstanding tasks in SQS queue.
+  reset  : clear all tasks in SQS queue.
+Required config vars:
+  AWS_ACCESS_KEY : Amazon Web Services access key.
+  AWS_SECRET_KEY : Amazon Web Services secret key.
+  WORK_QUEUE : name of SQS queue (e.g. sqs://QUEUE) used to stage render
+               work.  Will be automatically created if it doesn't exist.
+Optional config vars:
+  SQS_REGION : SQS region name, defaults to US standard.
+  VISIBILITY_TIMEOUT : SQS visibility timeout in seconds (default=120).
+                       SQS will return a task to the queue if the brenda-node
+                       worker doesn't acknowledge or complete the pending
+                       task over this period of time.
+Sample task script (single frame render):
+  blender -b *.blend -F PNG -o $OUTDIR/frame_###### $FRAME -t 0 -a
+Sample task script (subframe render):
+  cat >subframe.py <<EOF
+  import bpy
+  bpy.context.scene.render.border_min_x = $SF_MIN_X
+  bpy.context.scene.render.border_max_x = $SF_MAX_X
+  bpy.context.scene.render.border_min_y = $SF_MIN_Y
+  bpy.context.scene.render.border_max_y = $SF_MAX_Y
+  bpy.context.scene.render.use_border = True
+  EOF
+  blender -b *.blend -P subframe.py -F PNG -o $OUTDIR/frame_######_X-$SF_MIN_X-$SF_MAX_X-Y-$SF_MIN_Y-$SF_MAX_Y $FRAME -t 0 -a
+Examples:
+  Using a task script such as "single frame render" above, push a separate
+  task to render each frame from 1 to 1440:
+    $ brenda-work -T [SINGLE_FRAME_TASK_SCRIPT] -e 1440 push
+  You want to render a 16 minute short (21,600 frames), but each frame takes
+  an average of 4 computer hours to render, so you want to break each frame
+  into 16 subframes (4x4) to reduce the subframe render time to 15 minutes:
+    $ ./brenda-work -T [SUBFRAME_TASK_SCRIPT] -e 21600 -X 4 -Y 4 -d push
+  Show number of pending tasks in work queue:
+    $ brenda-work status
+  Remove all tasks from queue, reseting task queue to empty state:
+    $ brenda-work reset""" % (sys.argv[0])
+
+    parser = optparse.OptionParser(usage)
+
+    home = os.path.expanduser("~")
+    defconf = os.path.join(home, ".brenda.conf")
+
+    parser.add_option("-c", "--config", dest="config", default=defconf,
+                      help="Configuration file (default: %default)")
+
+    parser.add_option("-d", "--dry-run", action="store_true", dest="dry_run",
+                      help="Show tasks that would be pushed to work queue, but don't actually push anything")
+
+    parser.add_option("-T", "--task-script", dest="task_script",
+                      help="Script template file for a single task.  Macros: $OUTDIR: render output directory, $FRAME: -s, -e, and -j parameters.")
+
+    parser.add_option("-s", "--start", type="int", dest="start", default=1,
+                      help="Start frame to render, default=%default")
+    parser.add_option("-e", "--end", type="int", dest="end",
+                      help="End frame to render")
+    parser.add_option("-X", "--subdiv-x", type="int", dest="subdiv_x", default=0,
+                      help="Render subframes, number of subdivisions on X axis")
+    parser.add_option("-Y", "--subdiv-y", type="int", dest="subdiv_y", default=0,
+                      help="Render subframes, number of subdivisions on Y axis")
+    parser.add_option("-S", "--task-size", type="int", dest="task_size", default=1,
+                      help="Number of frames per task, default=%default")
+
+    parser.add_option("-r", "--randomize", action="store_true", dest="randomize",
+                      help="Randomize tasks before pushing to work queue")
+
+    parser.add_option("-H", "--hard", action="store_true", dest="hard",
+                      help="For reset, delete the SQS queue itself")
+
+    # Get command line arguments...
+    ( opts, args ) = parser.parse_args()
+    #print "OPTS", (opts, args)
+    if not args:
+        print >>sys.stderr, "no work, run with -h for usage"
+        sys.exit(2)
+
+    # Get configuration
+    conf = config.Config(opts.config, 'BRENDA_')
+    #print "CONFIG", conf
+
+    # dispatch
+    if args[0] == 'push':
+        work.push(opts, args, conf)
+    elif args[0] == 'status':
+        work.status(opts, args, conf)
+    elif args[0] == 'reset':
+        work.reset(opts, args, conf)
+    else:
+        print >>sys.stderr, "unrecognized command:", args[0]
+        sys.exit(2)
+
+main()
