@@ -48,7 +48,7 @@ Brenda to interact with AWS.
 
 Next, download and install Brenda on the client machine.
 
-$ git clone ...
+$ git clone http://github.com/jamesyonan/brenda.git
 $ cd brenda
 $ python setup.py install
 
@@ -125,17 +125,12 @@ Create $HOME/.brenda.conf now with the following content, making sure
 to replace PROJECT_BUCKET and FRAME_BUCKET with the names you chose
 above.
 
-AMI_ID=ami-...
 BLENDER_PROJECT=s3://PROJECT_BUCKET/myproject.tar.gz
 WORK_QUEUE=sqs://FRAME_BUCKET
 RENDER_OUTPUT=s3://FRAME_BUCKET
 SHUTDOWN=1
 
 To explain the above configuration settings in detail:
-
-AMI_ID is the name of an AWS virtual machine image based on Ubuntu
-Linux 12.04 that is preinstalled with Blender, Brenda, and all required
-dependencies.
 
 BLENDER_PROJECT is the name of our project file on S3.
 
@@ -412,7 +407,7 @@ pip install -U boto
 
 Next, download and install Brenda:
 
-git clone ...
+git clone http://github.com/jamesyonan/brenda.git
 cd brenda
 python setup.py install
 

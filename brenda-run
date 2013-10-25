@@ -40,8 +40,6 @@ Required config vars:
   AWS_SECRET_KEY : Amazon Web Services secret key.
   SSH_PUBKEY     : SSH public key that created EC2 instances will recognize
                    as an authorized key.  Defaults to $HOME/.ssh/id_rsa.pub
-  AMI_ID : Amazon ID of AMI that will be started.  This should be an AMI
-           that already has Brenda pre-installed.
   BLENDER_PROJECT : directory containing .blend file and all supporting files
                     for render.  May be a compressed file on S3 in zip format
                     or any format supported by tar, i.e.
@@ -52,6 +50,8 @@ Required config vars:
   RENDER_OUTPUT : render farm will save render output to this S3 bucket/prefix,
                   e.g. s3://BUCKET or s3://BUCKET/PREFIX
 Optional config vars:
+  AMI_ID : Amazon ID of AMI that will be started.  This should be an AMI
+           that already has Brenda pre-installed.
   EC2_REGION : EC2 region name, defaults to US standard (optional).
   INSTANCE_TYPE : EC2 instance type.
   BID_PRICE : maximum spot market bid price for EC2 instance in dollars per

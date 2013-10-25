@@ -18,7 +18,7 @@ import os, time, datetime, calendar
 import boto, boto.sqs, boto.s3, boto.ec2
 import boto.utils
 import paracurl
-from brenda import utils
+from brenda import utils, ami
 from brenda.error import ValueErrorRetry
 
 def aws_creds(conf):
@@ -173,7 +173,7 @@ def filter_instances(opts, conf, hostset=None):
         return (ut / 60) % 60 >= opts.threshold
 
     now = time.time()
-    ami = utils.get_opt(opts.ami, conf, 'AMI_ID')
+    ami = utils.get_opt(opts.ami, conf, 'AMI_ID', default=ami.AMI_ID)
     if hostset is None:
         if getattr(opts, 'hosts_file', None):
             with open(opts.hosts_file, 'r') as f:

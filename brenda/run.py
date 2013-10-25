@@ -15,10 +15,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import time
-from brenda import aws, utils
+from brenda import aws, ami, utils
 
 def demand(opts, conf):
-    ami_id = utils.get_opt(opts.ami, conf, 'AMI_ID', must_exist=True)
+    ami_id = utils.get_opt(opts.ami, conf, 'AMI_ID', default=ami.AMI_ID, must_exist=True)
     script = startup_script(opts, conf)
     user_data = None
     if not opts.idle:
@@ -47,7 +47,7 @@ def demand(opts, conf):
         print reservation
 
 def spot(opts, conf):
-    ami_id = utils.get_opt(opts.ami, conf, 'AMI_ID', must_exist=True)
+    ami_id = utils.get_opt(opts.ami, conf, 'AMI_ID', default=ami.AMI_ID, must_exist=True)
     price = utils.get_opt(opts.price, conf, 'BID_PRICE', must_exist=True)
     reqtype = 'persistent' if opts.persistent else 'one-time'
     script = startup_script(opts, conf)
