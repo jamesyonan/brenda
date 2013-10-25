@@ -87,8 +87,8 @@ Examples:
                       help="AMI ID to use when starting EC2 instances, overrides config variable AMI_ID")
     parser.add_option("-N", "--n-instances", type="int", dest="n_instances", default=1,
                       help="Number of EC2 instances to start, default=%default")
-    parser.add_option("-i", "--instance-type", dest="instance_type", default="c1.xlarge",
-                      help="EC2 instance type, overrides config variable INSTANCE_TYPE, default=%default")
+    parser.add_option("-i", "--instance-type", dest="instance_type",
+                      help="EC2 instance type, overrides config variable INSTANCE_TYPE")
     parser.add_option("-p", "--price", dest="price",
                       help="Maximum price in dollars per hour to bid on spot instances, overrides config variable BID_PRICE")
     parser.add_option("-P", "--persistent", action="store_true", dest="persistent",
