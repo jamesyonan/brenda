@@ -8,6 +8,9 @@ thousands of virtual machines in the cloud.
 Brenda includes four tools which are outlined below.  To see
 detailed help for each tool, run the tool with the -h option.
 
+You can also view the program notes for James Yonan's Brenda talk
+at the Blender Conference 2013 in doc/brenda-talk-blendercon-2013.pdf
+
 1. brenda-work -- used to create and populate an SQS queue with
    render tasks.  A render task is a short (often one-line) shell
    script that runs blender to render a single frame or subframe
@@ -132,7 +135,8 @@ SHUTDOWN=1
 
 To explain the above configuration settings in detail:
 
-BLENDER_PROJECT is the name of our project file on S3.
+BLENDER_PROJECT is the name of our project file on S3.  It
+can be an s3:// or file:// URL.
 
 WORK_QUEUE is the name of an SQS queue that we will create for the
 purpose of staging and sequencing the tasks in our render.
@@ -214,10 +218,11 @@ $ brenda-run init
 At this point, we are ready to start rendering.
 
 One of the more interesting features of AWS is the EC2 spot market.  In this
-market, we can rent virtual machines by the hour to render our project at
-a price considerably less than the on-demand going rate.  While the spot
-market offers good pricing, the downside is that our instances can be
-terminated at any time if the spot price rises above our maximum bid price.
+market, we can rent instances (i.e. virtual machines) by the hour to render
+our project at a price considerably less than the on-demand going rate.
+While the spot market offers good pricing, the downside is that our instances
+can be terminated at any time if the spot price rises above our maximum bid
+price.
 
 Let's check the current spot market prices:
 
@@ -230,7 +235,7 @@ us-east-1a 2013-10-24T07:32:32.000Z $0.141
 us-east-1b 2013-10-24T03:55:49.000Z $0.07
 us-east-1c 2013-10-24T02:05:53.000Z $0.07
  
-This indicates that the c1.xlarge instance (A reasonably fast VM
+This indicates that the c1.xlarge instance (a reasonably fast VM
 with 8 cores) is currently renting for US$0.07 per hour.
 
 Let's bid on 4 c1.xlarge instances at US$0.07 per hour.  Note that
@@ -275,7 +280,7 @@ Spot Requests
 At this point, the render job is running.  There are several methods you can
 use to track its progress.
 
-For example, use this command to view the number of pending frames in the work queue:
+Use this command to view the number of pending frames in the work queue:
 
 $ brenda-work status
 
@@ -333,13 +338,13 @@ the frames:
 $ mkdir frames
 $ s3cmd get -r s3://FRAME_BUCKET frames
 
-If something goes wrong during the render, Brenda will not shut
-down the VMs to give you a chance to download the log files:
+If something goes wrong during the render, Brenda will normally not shut
+down the instances to give you a chance to download the log files:
 
 $ mkdir logs
 $ brenda-tool rsync log logs/HOST.log
 
-If you want to cancel the render job and shut down the VMs,
+If you want to cancel the render job and shut down the instances,
 there are commands for that as well:
 
 Cancel pending spot requests that have not been activated yet:
@@ -349,6 +354,7 @@ $ brenda-run cancel
 Kill all active instances:
 
 $ brenda-run -T stop
+
 
 NOTES -- subframe rendering
 ---------------------------
@@ -391,8 +397,42 @@ tiles, use the following command to generate a work queue for the first
 
 ./brenda-work -T subframe-template -e 240 -X 8 -Y 8 -d push
 
+
+NOTES -- rendering large projects
+---------------------------------
+
+Brenda works by having each Brenda worker instance in the render farm
+download your compressed project file from S3 on startup.  This line
+in the $HOME/.brenda.conf file tells Brenda where to find the project:
+
+BLENDER_PROJECT=s3://PROJECT_BUCKET/myproject.tar.gz
+
+Now if you are dealing with a project that is tens or hundreds of
+GB (or more), there will be an initial delay after instances start up
+to download this file.
+
+As an alternative, consider creating your own Brenda AMI (see
+instructions below) and load your project directory onto the
+AMI filesystem itself, so that when the instance is started,
+the project directory is already present and doesn't need to
+be downloaded from S3.
+
+Suppose your project directory is present on the AMI in
+/root/myproject
+
+Then you would modify your $HOME/.brenda.conf file (on your client
+computer) to refer to the blender project using a file://
+URL instead of a s3:// URL:
+
+BLENDER_PROJECT=file:///root/myproject
+
+
 NOTES -- how to create a Brenda AMI
 -----------------------------------
+
+While Brenda already has a link to an existing AMI that has Blender
+and Brenda pre-installed, you can build your own AMI using the
+following procedure.
 
 To create an EC2 AMI capable of acting as a Brenda node,
 use the Ubuntu 12.04 x64 AMI as a starting point, then
