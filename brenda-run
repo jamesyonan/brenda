@@ -17,7 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys, os, optparse
-from brenda import config, run
+from brenda import aws, config, run
 
 def main():
     usage = """\
@@ -51,7 +51,7 @@ Required config vars:
                   e.g. s3://BUCKET or s3://BUCKET/PREFIX
 Optional config vars:
   AMI_ID : Amazon ID of AMI that will be started.  This should be an AMI
-           that already has Brenda pre-installed.
+           that already has Brenda pre-installed%s.
   EC2_REGION : EC2 region name, defaults to US standard (optional).
   INSTANCE_TYPE : EC2 instance type.
   BID_PRICE : maximum spot market bid price for EC2 instance in dollars per
@@ -73,7 +73,7 @@ Examples:
   Stop all running Brenda EC2 instances in this account:
     $ brenda-run stop
   Cancel all spot-requests:
-    $ brenda-run cancel""" % (sys.argv[0])
+    $ brenda-run cancel""" % (sys.argv[0], aws.get_default_ami_with_fmt(" (default=%s)"))
     parser = optparse.OptionParser(usage)
     parser.disable_interspersed_args()
 
@@ -84,7 +84,7 @@ Examples:
                       help="Configuration file (default: %default)")
 
     parser.add_option("-a", "--ami", dest="ami",
-                      help="AMI ID to use when starting EC2 instances, overrides config variable AMI_ID")
+                      help="AMI ID to use when starting EC2 instances, overrides config variable AMI_ID"+aws.get_default_ami_with_fmt(", default=%s"))
     parser.add_option("-N", "--n-instances", type="int", dest="n_instances", default=1,
                       help="Number of EC2 instances to start, default=%default")
     parser.add_option("-i", "--instance-type", dest="instance_type",

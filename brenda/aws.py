@@ -219,3 +219,9 @@ def get_ssh_identity_fn(opts, conf):
     if not v:
         v = os.path.join(os.path.expanduser("~"), '.ssh', 'id_rsa')
     return v
+
+def get_default_ami_with_fmt(fmt):
+    if AMI_ID:
+        return fmt % (AMI_ID,)
+    else:
+        return ""
