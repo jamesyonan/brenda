@@ -248,11 +248,18 @@ If the above command succeeds, you will see a list of information that includes
 the script that Brenda will push to the new instances and a list of 4
 SpotInstanceRequest objects.
 
-To see the current status of your spot requests and active instances, run:
+In some cases, during peak periods at the AWS data centers, spot instances might
+not be available for a resonable cost.  In this case, it is possible to use
+on-demand instances instead (at a higher cost):
+
+$ brenda-run -N 4 demand
+
+To see the current status of your instances and spot requests:
 
 $ brenda-run status
 
-You should see a rundown of your 4 pending instances.
+If you used the "brenda-run ... spot" command above, you should see a rundown
+of your 4 pending instances.
 
 Spot Requests
   sir-54b91c35 RegionInfo:us-east-1 one-time 2013-10-24T05:32:16.000Z $0.07 <Status: pending-evaluation>
@@ -277,6 +284,16 @@ Spot Requests
   sir-aa98a235 RegionInfo:us-east-1 one-time 2013-10-24T05:32:16.000Z $0.07 <Status: fulfilled>
   sir-db7e5a35 RegionInfo:us-east-1 one-time 2013-10-24T05:32:16.000Z $0.07 <Status: fulfilled>
 
+On the other hand, if you used the "brenda-run ... demand" command above, your
+instances should be started immediately:
+
+$ brenda-run status
+Active Instances
+  ami-e7c4988e 0:00:23 ec2-107-20-72-84.compute-1.amazonaws.com
+  ami-e7c4988e 0:00:23 ec2-54-211-251-85.compute-1.amazonaws.com
+  ami-e7c4988e 0:00:23 ec2-54-226-31-134.compute-1.amazonaws.com
+  ami-e7c4988e 0:00:23 ec2-54-234-204-209.compute-1.amazonaws.com
+
 At this point, the render job is running.  There are several methods you can
 use to track its progress.
 
@@ -298,7 +315,7 @@ One of the risks of running spot instances is that your instances can be
 terminated without warning if the spot price rises above your maximum
 bid price.  In this case, the spot requests status might look like this:
 
-$ ./brenda-run status
+$ brenda-run status
 Spot Requests
   sir-5dbba434 RegionInfo:us-east-1 one-time 2013-10-23T09:12:30.000Z $0.07 <Status: instance-terminated-by-price>
   sir-64daca34 RegionInfo:us-east-1 one-time 2013-10-23T09:12:30.000Z $0.07 <Status: instance-terminated-by-price>
@@ -395,7 +412,34 @@ queue as follows.  Assuming that we want to break each frame into 64 8x8
 tiles, use the following command to generate a work queue for the first
 240 frames:
 
-./brenda-work -T subframe-template -e 240 -X 8 -Y 8 -d push
+brenda-work -T subframe-template -e 240 -X 8 -Y 8 -d push
+
+NOTES -- multiframe rendering
+-----------------------------
+
+Multiframe rendering means that each unit of work processed by the
+render farm includes multiple frames (in this sense, it is the opposite
+of subframe rendering).  This can be useful when per-frame render
+times are small and you want to render multiple frames for each instantiation
+of the blender executable, or when there is a startup cost associated
+with rendering a series of frames, and you want to amoritize that cost
+over multiple frames.
+
+When generating the work queue, specify the -S option and the number of
+frames you would like to group together in each unit of work.
+The below example will generate a work queue to render 240 frames in
+units of 10 frames each.
+
+$ brenda-work -T frame-template -S 10 -e 240 push
+
+blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s 1 -e 10 -j 1 -t 0 -a
+blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s 11 -e 20 -j 1 -t 0 -a
+blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s 21 -e 30 -j 1 -t 0 -a
+.
+.
+.
+blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s 221 -e 230 -j 1 -t 0 -a
+blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s 231 -e 240 -j 1 -t 0 -a
 
 
 NOTES -- rendering large projects
@@ -452,4 +496,4 @@ cd brenda
 python setup.py install
 
 Now save the AMI.  The resulting image will have all dependencies
-necessary to run Brenda.
+necessary to run Blender and Brenda.
