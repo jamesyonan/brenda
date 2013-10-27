@@ -5,11 +5,13 @@ render farm.  Using Brenda, you can accelerate complex render
 tasks by distributing the work to tens, hundreds, or even
 thousands of virtual machines in the cloud.
 
+You can view James Yonan's Brenda talk at Blender
+Conference 2013 here: http://www.youtube.com/watch?v=_Oqo383uviw
+
+Talk notes are in doc/brenda-talk-blendercon-2013.pdf
+
 Brenda includes four tools which are outlined below.  To see
 detailed help for each tool, run the tool with the -h option.
-
-You can also view the program notes for James Yonan's Brenda talk
-at the Blender Conference 2013 in doc/brenda-talk-blendercon-2013.pdf
 
 1. brenda-work -- used to create and populate an SQS queue with
    render tasks.  A render task is a short (often one-line) shell
