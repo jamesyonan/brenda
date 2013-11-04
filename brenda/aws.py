@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import os, time, datetime, calendar
+import os, time, datetime, calendar, urllib2
 import boto, boto.sqs, boto.s3, boto.ec2
 import boto.utils
 import paracurl
@@ -43,7 +43,7 @@ def get_sqs_conn(conf):
     if region:
         conn = boto.sqs.connect_to_region(region, **aws_creds(conf))
         if not conn:
-            ValueErrorRetry("Could not establish SQS connection to region %r" % (region,))
+            raise ValueErrorRetry("Could not establish SQS connection to region %r" % (region,))
     else:
         conn = boto.connect_sqs(**aws_creds(conf))
     return conn
@@ -53,7 +53,7 @@ def get_ec2_conn(conf):
     if region:
         conn = boto.ec2.connect_to_region(region, **aws_creds(conf))
         if not conn:
-            ValueErrorRetry("Could not establish EC2 connection to region %r" % (region,))
+            raise ValueErrorRetry("Could not establish EC2 connection to region %r" % (region,))
     else:
         conn = boto.connect_ec2(**aws_creds(conf))
     return conn
@@ -156,10 +156,37 @@ def write_sqs_queue(string, queue):
     m.set_body(string)
     queue.write(m)
 
-def get_ec2_instances(conf):
-    conn = get_ec2_conn(conf)
-    reservations = conn.get_all_instances()
+def get_ec2_instances_from_conn(conn, instance_ids=None):
+    reservations = conn.get_all_instances(instance_ids=instance_ids)
     return [i for r in reservations for i in r.instances]
+
+def get_ec2_instances(conf, instance_ids=None):
+    conn = get_ec2_conn(conf)
+    return get_ec2_instances_from_conn(conn, instance_ids)
+
+def get_snapshots(conf):
+    conn = get_ec2_conn(conf)
+    return conn.get_all_snapshots(owner='self')
+
+def get_volumes(conf):
+    conn = get_ec2_conn(conf)
+    return conn.get_all_volumes()
+
+def find_snapshot(snapshots, name):
+    for s in snapshots:
+        try:
+            if s.tags['Name'] == name:
+                return s.id
+        except:
+            pass
+
+def find_volume(volumes, name):
+    for v in volumes:
+        try:
+            if v.tags['Name'] == name:
+                return v.id
+        except:
+            pass
 
 def format_uptime(sec):
     return str(datetime.timedelta(seconds=sec))
@@ -197,15 +224,19 @@ def shutdown_by_public_dns_name(opts, conf, dns_names):
     shutdown(opts, conf, iids)
 
 def shutdown(opts, conf, iids):
+    # Note that persistent spot instances must be explicitly cancelled,
+    # or EC2 will automatically requeue the spot instance request
     if opts.terminate:
         print "TERMINATE", iids
         if not opts.dry_run:
             conn = get_ec2_conn(conf)
+            cancel_spot_requests_from_instance_ids(conn, instance_ids=iids)
             conn.terminate_instances(instance_ids=iids)
     else:
         print "SHUTDOWN", iids
         if not opts.dry_run:
             conn = get_ec2_conn(conf)
+            cancel_spot_requests_from_instance_ids(conn, instance_ids=iids)
             conn.stop_instances(instance_ids=iids)
 
 def get_ssh_pubkey_fn(opts, conf):
@@ -225,3 +256,117 @@ def get_default_ami_with_fmt(fmt):
         return fmt % (AMI_ID,)
     else:
         return ""
+
+def parse_ebs_url(key):
+    if key and key.startswith("ebs://"):
+        return key[6:]
+
+def project_ebs_snapshot(conf):
+    return parse_ebs_url(conf.get('BLENDER_PROJECT'))
+
+def translate_snapshot_name(conf, snap_name, snapshots=None):
+    if snap_name:
+        if snap_name.startswith('snap-'):
+            return snap_name
+        else:
+            if snapshots is None:
+                snapshots = get_snapshots(conf)
+            n = find_snapshot(snapshots, snap_name)
+            if not n or not n.startswith('snap-'):
+                raise ValueError("snapshot not found: %r" % (snap_name,))
+            return n
+
+def translate_volume_name(conf, vol_name, volumes=None):
+    if vol_name:
+        if vol_name.startswith('vol-'):
+            return vol_name
+        else:
+            if volumes is None:
+                volumes = get_volumes(conf)
+            n = find_volume(volumes, vol_name)
+            if not n or not n.startswith('vol-'):
+                raise ValueError("volume not found: %r" % (vol_name,))
+            return n
+
+def get_work_dir(conf):
+    work_dir = conf.get('WORK_DIR', '/mnt')
+    if work_dir and not os.path.isdir(work_dir):
+        utils.makedirs(work_dir)
+    return work_dir
+
+def add_instance_store(opts, conf, bdm, itype):
+    if not (itype.startswith('t1.') or itype.startswith('m3.')):
+        dev = utils.blkdev(0, istore=True)
+        bdm[dev] = boto.ec2.blockdevicemapping.EBSBlockDeviceType(ephemeral_name='ephemeral0')
+        return dev
+
+def additional_ebs_iterator(conf):
+    i = 0
+    while True:
+        key = "ADDITIONAL_EBS_%d" % (i,)
+        if key in conf:
+            yield key
+        else:
+            break
+        i += 1
+
+def blk_dev_map(opts, conf, itype, snapshots):
+    if not int(conf.get('NO_EBS', '0')):
+        bdm = boto.ec2.blockdevicemapping.BlockDeviceMapping()
+        snap = project_ebs_snapshot(conf)
+        snap_id = translate_snapshot_name(conf, snap, snapshots)
+        snap_description = []
+        if snap_id:
+            dev = utils.blkdev(0)
+            bdm[dev] = boto.ec2.blockdevicemapping.EBSBlockDeviceType(snapshot_id=snap_id, delete_on_termination=True)
+            snap_description.append((snap, snap_id, dev))
+        i = 0
+        for k in additional_ebs_iterator(conf):
+            i += 1
+            snap = parse_ebs_url(conf[k].split(',')[0])
+            snap_id = translate_snapshot_name(conf, snap, snapshots)
+            if snap_id:
+                dev = utils.blkdev(i)
+                bdm[dev] = boto.ec2.blockdevicemapping.EBSBlockDeviceType(snapshot_id=snap_id, delete_on_termination=True)
+                snap_description.append((snap, snap_id, dev))
+        istore_dev = add_instance_store(opts, conf, bdm, itype)
+        return bdm, snap_description, istore_dev
+    else:
+        return None, None, None
+
+def mount_additional_ebs(conf, proj_dir):
+    i = 0
+    for k in additional_ebs_iterator(conf):
+        i += 1
+        dir = os.path.realpath(os.path.join(proj_dir, conf[k].split(',')[1]))
+        dev = utils.blkdev(i, mount_form=True)
+        utils.mount(dev, dir)
+
+def get_instance_id_self():
+    req = urllib2.Request("http://169.254.169.254/latest/meta-data/instance-id")
+    response = urllib2.urlopen(req)
+    the_page = response.read()
+    return the_page
+
+def get_spot_request_from_instance_id(conf, iid):
+    instances = get_ec2_instances(conf, instance_ids=(iid,))
+    if instances:
+        return instances[0].spot_instance_request_id
+
+def cancel_spot_request(conf, sir):
+    conn = get_ec2_conn(conf)
+    conn.cancel_spot_instance_requests(request_ids=(sir,))
+
+def cancel_spot_requests_from_instance_ids(conn, instance_ids):
+    instances = get_ec2_instances_from_conn(conn, instance_ids=instance_ids)
+    sirs = [ i.spot_instance_request_id for i in instances if i.spot_instance_request_id ]
+    print "CANCEL", sirs
+    if sirs:
+        conn.cancel_spot_instance_requests(request_ids=sirs)
+
+def config_file_name():
+    config = os.environ.get("BRENDA_CONFIG")
+    if not config:
+        home = os.path.expanduser("~")
+        config = os.path.join(home, ".brenda.conf")
+    return config

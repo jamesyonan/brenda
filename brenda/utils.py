@@ -38,13 +38,17 @@ def mkdir(dir):
     print "MKDIR", dir
     os.mkdir(dir)
 
+def makedirs(dir):
+    print "MAKEDIRS", dir
+    os.makedirs(dir)
+
 def mv(src, dest):
     print "MV %s %s" % (src, dest)
     shutil.move(src, dest)
 
 def shutdown():
     print "SHUTDOWN"
-    system(["shutdown", "-h", "0"])
+    system(["/sbin/shutdown", "-h", "0"])
 
 def write_atomic(path, data):
     tmp = path + '.tmp'
@@ -57,6 +61,54 @@ def str_nl(s):
         s += '\n'
     return s
 
+def blkdev(index, istore=False, mount_form=False):
+    if istore:
+        # instance store
+        devs = ('b', 'c', 'd', 'e')
+    else:
+        # EBS
+        devs = (
+            'f1', 'g1', 'h1', 'i1', 'j1', 'k1', 'l1', 'm1', 'n1', 'o1', 'p1',
+            'f2', 'g2', 'h2', 'i2', 'j2', 'k2', 'l2', 'm2', 'n2', 'o2', 'p2',
+            'f3', 'g3', 'h3', 'i3', 'j3', 'k3', 'l3', 'm3', 'n3', 'o3', 'p3',
+            'f4', 'g4', 'h4', 'i4', 'j4', 'k4', 'l4', 'm4', 'n4', 'o4', 'p4',
+            'f5', 'g5', 'h5', 'i5', 'j5', 'k5', 'l5', 'm5', 'n5', 'o5', 'p5',
+            'f6', 'g6', 'h6', 'i6', 'j6', 'k6', 'l6', 'm6', 'n6', 'o6', 'p6',
+            )
+    if mount_form:
+        return '/dev/xvd' + devs[index]
+    else:
+        return '/dev/sd' + devs[index]
+
+def mount(dev, dir, mkfs=False):
+    if not os.path.isdir(dir):
+        mkdir(dir)
+        if mkfs:
+            system(["/sbin/mkfs", "-t", "ext4", dev])
+        system(["/bin/mount", dev, dir])
+
+def top_dir(dir):
+    """
+    If dir contains no files and only one directory,
+    return that directory.  Otherwise return dir.
+    Note file/dir ignore rules.
+    """
+    def ignore(fn):
+        return fn == 'lost+found' or fn.startswith('.') or fn.endswith('.etag')
+    for dirpath, dirnames, filenames in os.walk(dir):
+        dirs = []
+        for f in filenames:
+            if not ignore(f):
+                break
+        else:
+            for d in dirnames:
+                if not ignore(d):
+                    dirs.append(d)
+        if len(dirs) == 1:
+            return os.path.join(dirpath, dirs[0])
+        else:
+            return dirpath
+
 def system_return_output(cmd, capture_stderr=False):
     output = ""
     error = ""
@@ -68,13 +120,20 @@ def system_return_output(cmd, capture_stderr=False):
     return str_nl(output) + str_nl(error)
 
 def get_opt(opt, conf, conf_key, default=None, must_exist=False):
-    if opt:
-        return opt
-    else:
-        ret = conf.get(conf_key, default)
-        if not ret and must_exist:
-            raise ValueError("config key %r is missing" % (conf_key,))
-        return ret
+    def g():
+        if opt:
+            return opt
+        else:
+            ret = conf.get(conf_key, default)
+            if not ret and must_exist:
+                raise ValueError("config key %r is missing" % (conf_key,))
+            return ret
+    ret = g()
+    if ret == '*':
+        if must_exist:
+            raise ValueError("config key %r must not be wildcard" % (conf_key,))
+        return None
+    return ret
 
 class Cd(object):
     """

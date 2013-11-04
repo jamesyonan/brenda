@@ -17,11 +17,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys, optparse
-from brenda import config, daemon, node
+from brenda import config, daemon, node, version
 
 def main():
     usage = """\
 usage: %s [options]
+Version:
+  Brenda %s
 Synopsis:
   Render farm node worker that reads blender project, executes render tasks
   from the work queue, and saves the render output in an S3 bucket. 
@@ -32,7 +34,9 @@ Required config vars:
                     for render.  May be a compressed file on S3 in zip format
                     or any format supported by tar, i.e.
                     s3://BUCKET/myproject.zip, or local directory on render
-                    farm node i.e. file:///my/local/blender/project
+                    farm node i.e. file:///my/local/blender/project.
+                    May also be an EBS snapshot, i.e. ebs://snap-66c5dd62
+                    or ebs://my-snapshot-name
   WORK_QUEUE : name of SQS queue (e.g. sqs://QUEUE) containing render
                work.
   RENDER_OUTPUT : render farm will save render output to this S3 bucket/prefix,
@@ -62,9 +66,14 @@ Optional config vars:
                     the render node on startup (1), or whether the project
                     should be locally cached and only refetched when
                     modified (0).
-  WORK_DIR : local work directory used by render farm node, defaults to HOME
+  WORK_DIR : local work directory used by render farm node, defaults to /mnt
              directory.
-  SHUTDOWN : shut down the instance on completion of all tasks (0|1, default=0).""" % (sys.argv[0])
+  RUNNING_ON_EC2 : boolean (0|1, default=1) that indicates if we are running
+                   on an EC2 instance.
+  ADDITIONAL_EBS_0, ADDITIONAL_EBS_1, ... : Additional EBS snapshots that
+    were attached to the instance and should be mounted before Blender is
+    started.  See brenda-run documentation for more info on this feature.
+  SHUTDOWN : shut down the instance on completion of all tasks (0|1, default=0).""" % (sys.argv[0], version.VERSION)
     parser = optparse.OptionParser(usage)
 
     parser.add_option("-c", "--config", dest="config",
@@ -77,6 +86,9 @@ Optional config vars:
                       help="Write process ID to this file when running as a daemon, default=%default")
     parser.add_option("-S", "--shutdown", action="store_true", dest="shutdown",
                       help="Shut down the instance on completion of all tasks")
+
+    parser.add_option("-d", "--dry-run", action="store_true", dest="dry_run",
+                      help="Download/mount project but don't render frames")
 
     # Get command line arguments...
     ( opts, args ) = parser.parse_args()

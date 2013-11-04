@@ -1,9 +1,10 @@
 Brenda -- Blender render farm software for Amazon Web Services.
 
 Brenda uses Amazon EC2, S3, and SQS to implement a distributed
-render farm.  Using Brenda, you can accelerate complex render
-tasks by distributing the work to tens, hundreds, or even
-thousands of virtual machines in the cloud.
+render farm using low-cost EC2 spot instances.  Using Brenda,
+you can accelerate complex render tasks by distributing the
+work to tens, hundreds, or even thousands of virtual machines
+in the cloud.
 
 You can view James Yonan's Brenda talk at Blender
 Conference 2013 here: http://www.youtube.com/watch?v=_Oqo383uviw
@@ -15,7 +16,7 @@ detailed help for each tool, run the tool with the -h option.
 
 1. brenda-work -- used to create and populate an SQS queue with
    render tasks.  A render task is a short (often one-line) shell
-   script that runs blender to render a single frame or subframe
+   script that runs Blender to render a single frame or subframe
    in a project.  Uses the SQS API.
 
 2. brenda-run -- used to start EC2 instances running Brenda,
@@ -86,8 +87,38 @@ s3cmd with your AWS account credentials:
 
 $ s3cmd --configure
 
-Next, we will bundle up our Blender project and save it to S3 so the render
-farm can access it.
+At this point, we will copy our Blender project, assets, and other
+supporting files to the AWS cloud so the render farm can access them.
+There are two methods to do this, each with their own advantages
+and disadvantages:
+
+1.  Bundle Blender project and supporting files into a zip or tar
+    file and push to S3.  S3 is a distributed file storage
+    service hosted by AWS.
+
+    Pros:  Relatively easy to set up.
+    Cons:  Starts to be prohibitively slow as data set gets
+           into the multi-GB range.
+
+2.  Create an EBS snapshot containing Blender project and
+    supporting files.  An EBS volume is a kind of virtual
+    hard drive that can be attached EC2 instances.  An
+    EBS snapshot is a kind of point-in-time copy of an EBS
+    volume that many EC2 instances can concurrently access.
+
+    Pros:  Efficient and scalable -- EBS snapshots can be up
+           to 1 TB in size, and Brenda supports attaching up to
+           66 EBS snapshots to each render farm instance.
+    Cons:  More involved to set up.
+
+Continuing with the tutorial, we will use the S3 method (1), but
+note the section "rendering large projects using EBS snapshots"
+below if your data set is large and you want to use method (2).
+
+Next, we will bundle up our Blender project and save it to S3 so
+the render farm can access it (make sure that the Blender project
+uses relative paths for file access so that the render farm instances
+will be able to follow them).
 
 To do this, create a folder with your .blend file and any other supporting
 files necessary to render frames, then compress it using tar or zip.
@@ -114,7 +145,7 @@ above, you should select a unique name.
 
 $ s3cmd mb s3://FRAME_BUCKET
 
-Now, we will copy our compressed blender project file to our S3 project
+Now, we will copy our compressed Blender project file to our S3 project
 bucket:
 
 $ s3cmd put myproject.tar.gz s3://PROJECT_BUCKET
@@ -130,12 +161,17 @@ Create $HOME/.brenda.conf now with the following content, making sure
 to replace PROJECT_BUCKET and FRAME_BUCKET with the names you chose
 above.
 
+INSTANCE_TYPE=m3.xlarge
 BLENDER_PROJECT=s3://PROJECT_BUCKET/myproject.tar.gz
 WORK_QUEUE=sqs://FRAME_BUCKET
 RENDER_OUTPUT=s3://FRAME_BUCKET
 SHUTDOWN=1
 
 To explain the above configuration settings in detail:
+
+INSTANCE_TYPE describes the type of EC2 instance (i.e. virtual machine)
+that will make up the render farm.  Different instance types offer
+different levels of performance and cost.
 
 BLENDER_PROJECT is the name of our project file on S3.  It
 can be an s3:// or file:// URL.
@@ -178,7 +214,7 @@ blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s 239 -e 239 -j 1 -t 0 -a
 blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s 240 -e 240 -j 1 -t 0 -a
 
 The first step in creating a work queue is to start with a Script Template.
-A script template describes how to run blender to accomplish a unit of work.
+A script template describes how to run Blender to accomplish a unit of work.
 Suppose that we want a unit of work to be the rendering of a single PNG
 frame.  In this case, our script template would be this:
 
@@ -228,7 +264,7 @@ price.
 
 Let's check the current spot market prices:
 
-$ brenda-run price
+$ brenda-run -i c1.xlarge price
 
 When I run the command now, I see the following:
 
@@ -240,21 +276,61 @@ us-east-1c 2013-10-24T02:05:53.000Z $0.07
 This indicates that the c1.xlarge instance (a reasonably fast VM
 with 8 cores) is currently renting for US$0.07 per hour.
 
-Let's bid on 4 c1.xlarge instances at US$0.07 per hour.  Note that
-when you run the following command, you are agreeing to be charged
-US$0.28 per hour total to rent 4 VMs (i.e. US$0.07 x 4 instances).
+AWS offers many different instance types that offer different levels
+of performance/cost.  Some of the instances suitable for use
+as render farm workers include:
 
-$ brenda-run -N 4 -p 0.07 spot
+Instance                           Baseline Spot Price as of 2013.11
+--------                           ---------------------------------
+1. m3.xlarge (Brenda default)      US$0.0575/hour
+2. m3.2xlarge                      US$0.115/hour
+3. c1.xlarge                       US$0.07/hour
 
-If the above command succeeds, you will see a list of information that includes
-the script that Brenda will push to the new instances and a list of 4
-SpotInstanceRequest objects.
+To see the current spot price of a given EC2 instance in several
+availability zones:
+
+$ brenda-run -i INSTANCE_TYPE price
+
+At certain times, a given instance might be overbid, in which case
+the spot market price can rise considerably above the Baseline Spot
+Price.  In general, avoid bidding more than the baseline price
+as this can make your renders much more expensive than they need to
+be.  If a given instance type is overbid, try using a different
+instance type whose price is still at its baseline.
+
+For GPU accelerated rendering, AWS offers a GPU-enabled instance
+(cg1.4xlarge), however its price is considerably more than standard
+instances, making it a questionable value proposition.
+
+For more info on EC2 instance types see:
+
+  http://aws.amazon.com/ec2/instance-types/
+
+Continuing with the tutorial, let's bid on 4 c1.xlarge instances
+at US$0.07 per hour.  Note that when you run the following command,
+you are agreeing to be charged US$0.28 per hour total to rent 4 VMs
+(i.e. US$0.07 x 4 instances).
+
+$ brenda-run -P -i c1.xlarge -N 4 -p 0.07 spot
+
+Note that we used the -P flag to create our spot instance requests.
+This flag tells AWS to make our spot requests "persistent", meaning
+that if the spot price for c1.xlarge rises above US$0.07/hour, causing
+our instances to be terminated, the spot request will stay in place,
+meaning that as soon as the price falls back to US$0.07/hour, our
+instances will automatically be restarted so they can continue the
+render job.
+
+If the above command succeeds, you will see a list of information that
+includes the script that Brenda will push to the new instances and a list
+of 4 SpotInstanceRequest objects.
 
 In some cases, during peak periods at the AWS data centers, spot instances might
 not be available for a resonable cost.  In this case, it is possible to use
-on-demand instances instead (at a higher cost):
+on-demand instances instead (Note however that on-demand instance are
+considerably more expensive than spot instances).
 
-$ brenda-run -N 4 demand
+$ brenda-run -i c1.xlarge -N 4 demand
 
 To see the current status of your instances and spot requests:
 
@@ -312,6 +388,10 @@ $ brenda-tool ssh tail log
 Or view the current CPU load on each render instance:
 
 $ brenda-tool ssh uptime
+
+To see the number of tasks (i.e. frames) completed by each render instance:
+
+$ brenda-tool ssh cat task_count
 
 One of the risks of running spot instances is that your instances can be
 terminated without warning if the spot price rises above your maximum
@@ -423,7 +503,7 @@ Multiframe rendering means that each unit of work processed by the
 render farm includes multiple frames (in this sense, it is the opposite
 of subframe rendering).  This can be useful when per-frame render
 times are small and you want to render multiple frames for each instantiation
-of the blender executable, or when there is a startup cost associated
+of the Blender executable, or when there is a startup cost associated
 with rendering a series of frames, and you want to amoritize that cost
 over multiple frames.
 
@@ -444,33 +524,92 @@ blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s 221 -e 230 -j 1 -t 0 -a
 blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s 231 -e 240 -j 1 -t 0 -a
 
 
-NOTES -- rendering large projects
----------------------------------
+NOTES -- rendering large projects using EBS snapshots
+-----------------------------------------------------
 
-Brenda works by having each Brenda worker instance in the render farm
-download your compressed project file from S3 on startup.  This line
-in the $HOME/.brenda.conf file tells Brenda where to find the project:
+Brenda supports both AWS S3 and EBS snapshots as a means of providing
+your project data to the render farm.
 
-BLENDER_PROJECT=s3://PROJECT_BUCKET/myproject.tar.gz
+While smaller projects can provide the .blend file and other project data
+via S3, having each render farm instance download a multi-GB file from
+S3 can be prohibitively slow.
 
-Now if you are dealing with a project that is tens or hundreds of
-GB (or more), there will be an initial delay after instances start up
-to download this file.
+An alternative is to use AWS EBS (Elastic Block Store) snapshots instead
+of S3 as a means to make your project data and assets available to the
+render farm instances.  EBS volumes can be up to 1 TB and Brenda
+currently supports up to 66 EBS volumes connected to each render
+farm instance.
 
-As an alternative, consider creating your own Brenda AMI (see
-instructions below) and load your project directory onto the
-AMI filesystem itself, so that when the instance is started,
-the project directory is already present and doesn't need to
-be downloaded from S3.
+An EBS volume can be thought of as a kind of virtual hard drive.
+You can create an EC2 instance and attach a newly created or existing
+EBS volume to that instance, then copy your project files and assets
+to the volume.  Your .blend file should be in the top level of the
+EBS volume, so Brenda can locate it.  EBS volumes are persistent,
+so you can maintain a volume that contains the current state of your
+project, while adding, removing, and modifying files as needed.
 
-Suppose your project directory is present on the AMI in
-/root/myproject
+An EBS volume, by itself, can only be connected to a single instance
+at a time, so before we begin a render, we must "snapshot" the
+EBS volume so we can make a copy of it available to all of the instances
+in the render farm.  The AWS web console provides a full set of tools
+for creating EBS volumes and snapshotting them.
 
-Then you would modify your $HOME/.brenda.conf file (on your client
-computer) to refer to the blender project using a file://
-URL instead of a s3:// URL:
+Once you have your EBS snapshot ready, you can specify it in the
+.brenda.conf file by using an ebs:// URL:
 
-BLENDER_PROJECT=file:///root/myproject
+  BLENDER_PROJECT=ebs://EBS_SNAPSHOT_NAME
+
+EBS_SNAPSHOT_NAME can be a raw snapshot ID such as "snap-ab957cc2"
+or it can be a high-level name that you assigned to the snapshot
+such as "my-project".
+
+Note: When using an EBS snapshot as your BLENDER_PROJECT, make
+      sure that your .blend file is in the top level of the
+      EBS volume, so Brenda can locate it.
+
+Brenda also supports mounting additional EBS snapshots (up to 65
+more) that appear as subdirectories in your project directory,
+and can be used to provide assets and additional data to the
+render process.
+
+  ADDITIONAL_EBS_0="ebs://EBS_SNAPSHOT_NAME,DIRECTORY"
+  ADDITIONAL_EBS_1="ebs://EBS_SNAPSHOT_NAME,DIRECTORY"
+  .
+  .
+  .
+
+The EBS snapshot EBS_SNAPSHOT_NAME will be mounted as a subdirectory
+called DIRECTORY in the same directory as your .blend project.
+
+
+NOTES -- uploading your project data to the AWS cloud
+-----------------------------------------------------
+
+To use Brenda, you must first upload your project data to the
+AWS cloud so that the data resides on either S3 or an EBS
+volume.
+
+When your project data is large, there are various methods
+that can be used to optimize this process:
+
+1. Consider generating bakes and caches in the cloud itself so that
+   the data is already there and doesn't need to be uploaded.  This
+   could be done by starting up a Windows EC2 instance, installing
+   Blender and your project files on it, generating the bake/cache
+   files, and copying them to an EBS volume.
+
+2. If your project data and assets is large (hundreds of GB or TB),
+   it may be impractical to upload on the internet.  One alternative
+   is AWS Import/Export:
+
+   http://aws.amazon.com/importexport/
+
+   You can physically ship a storage device (such as a hard drive)
+   to an AWS data center, and they will copy the data directly to an
+   EBS snapshot, which you can then refer to in your Brenda
+   configuration.  See the section above "rendering large projects
+   using EBS snapshots" for more info on making your EBS snapshot
+   available to the render farm.
 
 
 NOTES -- how to create a Brenda AMI
@@ -484,18 +623,35 @@ To create an EC2 AMI capable of acting as a Brenda node,
 use the Ubuntu 12.04 x64 AMI as a starting point, then
 execute these commands as root.
 
-perl -p -i.bak -e 's/^disable_root: 1/disable_root: 0/' /etc/cloud/cloud.cfg
-perl -p -i.bak -e 's/.*ssh-rsa/ssh-rsa/' /root/.ssh/authorized_keys
-add-apt-repository -y ppa:irie/blender
-apt-get update
-apt-get install -y blender python-pip gcc python-dev libcurl4-openssl-dev git
-pip install -U boto
+$ perl -p -i.bak -e 's/^disable_root: 1/disable_root: 0/' /etc/cloud/cloud.cfg
+$ perl -p -i.bak -e 's/.*ssh-rsa/ssh-rsa/' /root/.ssh/authorized_keys
+$ add-apt-repository -y ppa:irie/blender
+$ apt-get update
+$ apt-get install -y blender python-pip gcc python-dev libcurl4-openssl-dev git
+$ pip install -U boto
+$ pip install -U s3cmd
 
 Next, download and install Brenda:
 
-git clone http://github.com/jamesyonan/brenda.git
-cd brenda
-python setup.py install
+$ git clone http://github.com/jamesyonan/brenda.git
+$ cd brenda
+$ python setup.py install
 
 Now save the AMI.  The resulting image will have all dependencies
 necessary to run Blender and Brenda.
+
+If you intend to make a public AMI, be sure to clean the instance
+filesystem of security-related files before you snapshot it:
+
+$ rm -rf /root/.bash_history /home/ubuntu/.bash_history
+$ rm -rf /root/.cache /home/ubuntu/.sudo_as_admin_successful /home/ubuntu/.cache /var/log/auth.log /var/log/lastlog
+$ rm -rf /root/.ssh/authorized_keys /home/ubuntu/.ssh/authorized_keys /root/.ssh/authorized_keys.bak /home/ubuntu/.ssh/authorized_keys.bak
+
+Note: make sure not to delete /root/.ssh/authorized_keys until the moment you
+are ready to snapshot the instance, because doing so will prevent you from logging
+into the instance again by ssh.
+
+Finally, if you want to make your AMI public, use the following commands
+(requires EC2 command line tools):
+
+$ ec2-modify-image-attribute MY_AMI --launch-permission --add all

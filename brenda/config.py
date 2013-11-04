@@ -25,7 +25,7 @@ class Config(dict):
     #   MYFILE="$HOME/file.txt"
     re_macro = re.compile(r"\$\{?(\w+)\}?")
 
-    def __init__(self, config_file, env_prefix=None, default_stdin=False):
+    def __init__(self, config_file, env_prefix=None, default_stdin=False, use_s3cfg=True):
         # load and parse config file
         if config_file:
             with open(config_file) as f:
@@ -37,6 +37,25 @@ class Config(dict):
 
         # load environmental vars
         self._load_from_env(env_prefix)
+
+        # get access_key and secret_key from ~/.s3cfg (it it exists)
+        if use_s3cfg:
+            for k, s3k in (('AWS_ACCESS_KEY', 'access_key'), ('AWS_SECRET_KEY', 'secret_key')):
+                if not self.get(k):
+                    v = self._s3cfg_get(s3k)
+                    if v:
+                        self[k] = v
+
+    @staticmethod
+    def _s3cfg_get(key):
+        r = re.compile(r"^%s\s*=\s*(.*)$" % (key,))
+        home = os.path.expanduser("~")
+        s3cfg = os.path.join(home, ".s3cfg")
+        with open(s3cfg) as f:
+            for line in f.readlines():
+                m = re.match(r, line)
+                if m:
+                    return m.groups()[0]
 
     def _load_from_env(self, env_prefix):
         if env_prefix:

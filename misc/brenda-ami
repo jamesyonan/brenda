@@ -1,31 +1,46 @@
 #!/bin/bash
 set -e
-# blender-base AMI
-export BRENDA_AMI_ID=ami-61316d08
+if [ "$ALL" = "1" ]; then
+    export BRENDA_AMI_ID='*'
+else
+    # blender-base AMI
+    export BRENDA_AMI_ID=ami-61316d08
+fi
+export BRENDA_NO_EBS=1
 cd
 if [ "$1" = "1" ]; then
-	echo BRENDA RUN
-	brenda-run -i t1.micro -I demand
+    echo BRENDA RUN t1.micro
+    brenda-run -i t1.micro -I demand
+elif [ "$1" = "1a" ]; then
+    echo BRENDA RUN m1.medium
+    brenda-run -i m1.medium -I demand
 elif [ "$1" = "2" ]; then
-	echo BRENDA STATUS
-	brenda-tool ssh uptime
+    echo BRENDA STATUS
+    brenda-tool ssh uptime
 elif [ "$1" = "3" ]; then
-	echo BRENDA CLEAN
-	cd ~/src/brenda
-	./doclean
-	cd ..
-	echo REMOVE PREVIOUS
-	brenda-tool ssh 'rm -rf brenda.tar.gz brenda'
-	echo TAR
-	tar cfzv brenda.tar.gz brenda
-	echo PUSH TAR
-	brenda-tool rsync brenda.tar.gz HOST:
-	echo INSTALL BRENDA
-	brenda-tool ssh 'tar xf brenda.tar.gz && cd brenda && python setup.py install && cd .. && rm -rf brenda.tar.gz brenda'
-	echo RM ROOT SECURITY-SENSITIVE FILES
-	brenda-tool ssh 'cd /home/ubuntu && rm -vf .bash_history && cd .ssh && rm -vf authorized_keys authorized_keys.bak'
-	echo RM UBUNTU SECURITY-SENSITIVE FILES and SHUTDOWN
-	brenda-tool ssh 'rm -vf .bash_history && cd .ssh && rm -vf authorized_keys authorized_keys.bak && shutdown -h 0'
+    # fixme -- remove when s3cmd added to base
+    echo S3CMD
+    brenda-tool ssh 'pip install -U s3cmd'
+
+    echo BRENDA CLEAN
+    cd ~/src/brenda
+    ./doclean
+    cd ..
+    echo REMOVE PREVIOUS
+    brenda-tool ssh 'rm -rf brenda.tar.gz brenda'
+    echo TAR
+    tar cfzv brenda.tar.gz brenda
+    echo PUSH TAR
+    brenda-tool rsync brenda.tar.gz HOST:
+    echo INSTALL BRENDA
+    brenda-tool ssh 'tar xf brenda.tar.gz ; cd brenda ; echo "AMI_ID=None" >brenda/ami.py ; python setup.py install'
+elif [ "$1" = "4" ]; then
+    echo RM BRENDA INSTALL DIR
+    brenda-tool ssh 'rm -rfv brenda'
+    echo RM UBUNTU SECURITY-SENSITIVE FILES
+    brenda-tool ssh 'cd /home/ubuntu ; rm -rfv .bash_history .cache .sudo_as_admin_successful ; cd .ssh ; rm -rfv authorized_keys authorized_keys.bak'
+    echo RM ROOT SECURITY-SENSITIVE FILES and SHUTDOWN
+    brenda-tool ssh 'rm -rfv .bash_history .cache /var/log/auth.log /var/log/lastlog ; cd .ssh ; rm -rfv authorized_keys authorized_keys.bak ; shutdown -h 0'
 else
-	echo "usage: brenda-ami 1|2|3"
+    echo "usage: brenda-ami 1[a]|2|3|4"
 fi

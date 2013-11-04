@@ -1,0 +1,92 @@
+#!/usr/bin/python
+
+# Brenda -- Blender render tool for Amazon Web Services
+# Copyright (C) 2013 James Yonan <james@openvpn.net>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import sys, os, optparse
+from brenda import aws, ebs, config, run, version
+
+def main():
+    usage = """\
+usage: %s [options] new 
+Version:
+  Brenda %s
+Synopsis:
+  Manage EBS volumes used to store Blender projects and assets.
+Commands:
+  new : Start an EC2 instance attached to a newly created EBS volume.
+  existing : Start an EC2 instance attached to an existing EBS volume.
+Required config vars:
+  AWS_ACCESS_KEY : Amazon Web Services access key.
+  AWS_SECRET_KEY : Amazon Web Services secret key.
+  SSH_PUBKEY     : SSH public key that created EC2 instances will recognize
+                   as an authorized key.  Defaults to $HOME/.ssh/id_rsa.pub
+Optional config vars:
+  AMI_ID : Amazon ID of AMI that will be started%s.
+  EC2_REGION : EC2 region name, defaults to US standard (optional).
+  SSH_KEY_NAME : EC2 ssh key name, default='brenda'
+  SECURITY_GROUP : EC2 security group, default='brenda'
+  EBS_MANAGE_INSTANCE_TYPE : EC2 instance type, default='t1.micro'.
+  EBS_MANAGE_AVAILABILITY_ZONE : EC2 availability zone.
+Examples:
+  Start a new EC2 instance attached to a newly created 25GB EBS volume:
+    brenda-ebs -s 25 new""" % (sys.argv[0], version.VERSION, aws.get_default_ami_with_fmt(" (default=%s)"))
+    parser = optparse.OptionParser(usage)
+    parser.disable_interspersed_args()
+
+    defconf = aws.config_file_name()
+
+    parser.add_option("-c", "--config", dest="config", default=defconf,
+                      help="Configuration file (default: %default)")
+
+    parser.add_option("-a", "--ami", dest="ami",
+                      help="AMI ID to use when starting EC2 instances, overrides config variable AMI_ID"+aws.get_default_ami_with_fmt(", default=%s"))
+    parser.add_option("-s", "--size", type="int", dest="size", default=1,
+                      help="Size of new EBS volume in GB, default=%default")
+    parser.add_option("-S", "--snapshot", dest="snapshot",
+                      help="existing EBS snapshot")
+    parser.add_option("-i", "--instance-type", dest="ebs_manage_instance_type",
+                      help="EC2 instance type for EBS managment, overrides config variable EBS_MANAGE_INSTANCE_TYPE")
+    parser.add_option("-z", "--zone", dest="ebs_manage_availability_zone",
+                      help="EC2 availability zone, overrides config variable EBS_MANAGE_AVAILABILITY_ZONE")
+
+    parser.add_option("-m", "--mount", action="store_true", dest="mount",
+                      help="automatically do mkfs (if new volume) and mount the volume on /mnt")
+
+    parser.add_option("-d", "--dry-run", action="store_true", dest="dry_run",
+                      help="show what would be done without actually doing it")
+
+    # Get command line arguments...
+    ( opts, args ) = parser.parse_args()
+    #print "OPTS", (opts, args)
+    if not args:
+        print >>sys.stderr, "no work, run with -h for usage"
+        sys.exit(2)
+
+    # Get configuration
+    conf = config.Config(opts.config, 'BRENDA_')
+    #print "CONFIG", conf
+
+    # dispatch
+    if args[0] == 'new':
+        ebs.create_instance_with_ebs(opts, conf, new=True)
+    elif args[0] == 'existing':
+        ebs.create_instance_with_ebs(opts, conf, new=False)
+    else:
+        print >>sys.stderr, "unrecognized command:", args[0]
+        sys.exit(2)
+
+main()

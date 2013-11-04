@@ -20,11 +20,13 @@ from brenda.ami import AMI_ID
 
 def demand(opts, conf):
     ami_id = utils.get_opt(opts.ami, conf, 'AMI_ID', default=AMI_ID, must_exist=True)
+    itype = brenda_instance_type(opts, conf)
+    snapshots = aws.get_snapshots(conf)
+    bdm, snap_description, istore_dev = aws.blk_dev_map(opts, conf, itype, snapshots)
     script = startup_script(opts, conf)
     user_data = None
     if not opts.idle:
         user_data = script
-    itype = brenda_instance_type(opts, conf)
     ssh_key_name = conf.get("SSH_KEY_NAME", "brenda")
     sec_groups = (conf.get("SECURITY_GROUP", "brenda"),)
     run_args = {
@@ -34,11 +36,16 @@ def demand(opts, conf):
         'user_data'     : user_data,
         'key_name'      : ssh_key_name,
         'security_groups' : sec_groups,
+        'block_device_map' : bdm,
         }
 
     print "AMI ID:", ami_id
     print "Instance type:", itype
     print "Max instances:", opts.n_instances
+    if snap_description:
+        print "Project EBS snapshot:", snap_description
+    if istore_dev:
+        print "Instance store device:", istore_dev
     print "SSH key name:", ssh_key_name
     print "Security groups:", sec_groups
     print_script(opts, conf, script)
@@ -51,11 +58,13 @@ def spot(opts, conf):
     ami_id = utils.get_opt(opts.ami, conf, 'AMI_ID', default=AMI_ID, must_exist=True)
     price = utils.get_opt(opts.price, conf, 'BID_PRICE', must_exist=True)
     reqtype = 'persistent' if opts.persistent else 'one-time'
+    itype = brenda_instance_type(opts, conf)
+    snapshots = aws.get_snapshots(conf)
+    bdm, snap_description, istore_dev = aws.blk_dev_map(opts, conf, itype, snapshots)
     script = startup_script(opts, conf)
     user_data = None
     if not opts.idle:
         user_data = script
-    itype = brenda_instance_type(opts, conf)
     ssh_key_name = conf.get("SSH_KEY_NAME", "brenda")
     sec_groups = (conf.get("SECURITY_GROUP", "brenda"),)
     run_args = {
@@ -67,6 +76,7 @@ def spot(opts, conf):
         'user_data'     : user_data,
         'key_name'      : ssh_key_name,
         'security_groups' : sec_groups,
+        'block_device_map' : bdm,
         }
 
     print "AMI ID:", ami_id
@@ -74,6 +84,10 @@ def spot(opts, conf):
     print "Request type:", reqtype
     print "Instance type:", itype
     print "Instance count:", opts.n_instances
+    if snap_description:
+        print "Project EBS snapshot:", snap_description
+    if istore_dev:
+        print "Instance store device:", istore_dev
     print "SSH key name:", ssh_key_name
     print "Security groups:", sec_groups
     print_script(opts, conf, script)
@@ -125,7 +139,10 @@ def status(opts, conf):
         print "Spot Requests"
         for r in requests:
             dns_name = ''
-            print "  %s %s %s %s $%s %s" % (r.id, r.region, r.type, r.create_time, r.price, r.status)
+            print "  %s %s %s %s $%s %s %s" % (r.id, r.region, r.type, r.create_time, r.price, r.state, r.status)
+
+def script(opts, conf):
+    print startup_script(opts, conf)
 
 def init(opts, conf):
     ec2 = aws.get_ec2_conn(conf)
@@ -151,14 +168,14 @@ def init(opts, conf):
 def startup_script(opts, conf):
     head = "#!/bin/bash\ncd /root\n/usr/local/bin/brenda-node --daemon <<EOF\n";
     tail = "EOF\n";
-    keys = (
+    keys = [
         'AWS_ACCESS_KEY',
         'AWS_SECRET_KEY',
         'BLENDER_PROJECT',
         'WORK_QUEUE',
         'RENDER_OUTPUT'
-        )
-    optional_keys = (
+        ]
+    optional_keys = [
         "S3_REGION",
         "SQS_REGION",
         "CURL_MAX_THREADS",
@@ -172,7 +189,7 @@ def startup_script(opts, conf):
         "BLENDER_PROJECT_ALWAYS_REFETCH",
         "WORK_DIR",
         "SHUTDOWN"
-        )
+        ] + list(aws.additional_ebs_iterator(conf))
 
     script = head
     for k in keys:
@@ -195,7 +212,7 @@ def print_script(opts, conf, script):
                 if line.startswith(redact):
                     line = redact + "[redacted]"
                     break
-            print '  '+line
+            print '  ', line
 
 def brenda_instance_type(opts, conf):
-    return utils.get_opt(opts.instance_type, conf, 'INSTANCE_TYPE', default="c1.xlarge")
+    return utils.get_opt(opts.instance_type, conf, 'INSTANCE_TYPE', default="m3.xlarge")

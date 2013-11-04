@@ -17,11 +17,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys, os, optparse
-from brenda import config, work
+from brenda import config, work, aws, version
 
 def main():
     usage = """"\
 usage: %s [options] push|status|reset
+Version:
+  Brenda %s
 Synopsis:
   Manage render farm work queue.
 Commands:
@@ -62,12 +64,11 @@ Examples:
   Show number of pending tasks in work queue:
     $ brenda-work status
   Remove all tasks from queue, reseting task queue to empty state:
-    $ brenda-work reset""" % (sys.argv[0])
+    $ brenda-work reset""" % (sys.argv[0], version.VERSION)
 
     parser = optparse.OptionParser(usage)
 
-    home = os.path.expanduser("~")
-    defconf = os.path.join(home, ".brenda.conf")
+    defconf = aws.config_file_name()
 
     parser.add_option("-c", "--config", dest="config", default=defconf,
                       help="Configuration file (default: %default)")

@@ -17,11 +17,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys, os, optparse
-from brenda import aws, config, tool
+from brenda import aws, config, tool, version
 
 def main():
     usage = """\
 usage: %s [options] ssh|rsync|instances|prune [args...]
+Version:
+  Brenda %s
 Synopsis:
   Manage EC2 instances in the render farm.
 Commands:
@@ -76,12 +78,11 @@ Examples:
   billable hour of operation.  64 instances running over the next hour would
   be overkill to finish the render job, so you want to scale back the number
   of instances to 16:
-    $ brenda-tool prune 16""" % (sys.argv[0], aws.get_default_ami_with_fmt("\n           default=%s"))
+    $ brenda-tool prune 16""" % (sys.argv[0], version.VERSION, aws.get_default_ami_with_fmt("\n           default=%s"))
     parser = optparse.OptionParser(usage)
     parser.disable_interspersed_args()
 
-    home = os.path.expanduser("~")
-    defconf = os.path.join(home, ".brenda.conf")
+    defconf = aws.config_file_name()
 
     parser.add_option("-c", "--config", dest="config", default=defconf,
                       help="Configuration file (default: %default)")

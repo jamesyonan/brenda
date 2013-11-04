@@ -1,0 +1,1 @@
+python $HOME/src/brenda/test/perframe.py --pause 0 -o $OUTDIR $FRAME

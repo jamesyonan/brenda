@@ -17,11 +17,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys, os, optparse
-from brenda import aws, config, run
+from brenda import aws, config, run, version
 
 def main():
     usage = """\
-usage: %s [options] demand|spot|price|stop|cancel|status|init
+usage: %s [options] demand|spot|script|price|stop|cancel|status|init
+Version:
+  Brenda %s
 Synopsis:
   Start an EC2 on-demand or spot instance.
 Commands:
@@ -29,6 +31,7 @@ Commands:
            a specified maximum cost per hour.
   price  : show current spot prices.
   demand : start a higher-cost "on-demand" instance.
+  script : output brenda-node script to be run on remote instance.
   stop   : stop all running EC2 instances (less fine-grained than
            "brenda-tool prune").
   cancel : cancel all spot requests.
@@ -45,6 +48,8 @@ Required config vars:
                     or any format supported by tar, i.e.
                     s3://BUCKET/myproject.zip, or local directory on render
                     farm node i.e. file:///my/local/blender/project
+                    May also be an EBS snapshot, i.e. ebs://snap-66c5dd62
+                    or ebs://my-snapshot-name
   WORK_QUEUE : name of SQS queue (e.g. sqs://QUEUE) containing render
                work.
   RENDER_OUTPUT : render farm will save render output to this S3 bucket/prefix,
@@ -59,6 +64,15 @@ Optional config vars:
               as a config variable.
   SSH_KEY_NAME : EC2 ssh key name, default='brenda'
   SECURITY_GROUP : EC2 security group, default='brenda'
+  ADDITIONAL_EBS_0, ADDITIONAL_EBS_1, ... : Additional EBS snapshots that
+    should be attached to the render-farm instance before Blender is
+    started. EBS snapshots can be up to 1 TB in size and can be used to
+    provide assets and additional data to the render process.
+    Syntax: ADDITIONAL_EBS_0="ebs://MY_SNAPSHOT,DIRECTORY" will mount
+    MY_SNAPSHOT in DIRECTORY (relative to Blender project location).
+    Example: ADDITIONAL_EBS_0="ebs://snap-ab957cc2,freebase" will
+    mount the EBS snapshot snap-ab957cc2 in a directory called
+    freebase in the same directory as the Blender project.
   [Note: all optional vars supported by brenda-node can also be specified here]
 Examples:
   Show current running EC2 instances and spot requests.
@@ -73,12 +87,11 @@ Examples:
   Stop all running Brenda EC2 instances in this account:
     $ brenda-run stop
   Cancel all spot-requests:
-    $ brenda-run cancel""" % (sys.argv[0], aws.get_default_ami_with_fmt(" (default=%s)"))
+    $ brenda-run cancel""" % (sys.argv[0], version.VERSION, aws.get_default_ami_with_fmt(" (default=%s)"))
     parser = optparse.OptionParser(usage)
     parser.disable_interspersed_args()
 
-    home = os.path.expanduser("~")
-    defconf = os.path.join(home, ".brenda.conf")
+    defconf = aws.config_file_name()
 
     parser.add_option("-c", "--config", dest="config", default=defconf,
                       help="Configuration file (default: %default)")
@@ -129,6 +142,8 @@ Examples:
         run.status(opts, conf)
     elif args[0] == 'init':
         run.init(opts, conf)
+    elif args[0] == 'script':
+        run.script(opts, conf)
     else:
         print >>sys.stderr, "unrecognized command:", args[0]
         sys.exit(2)
