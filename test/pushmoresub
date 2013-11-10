@@ -1,0 +1,7 @@
+#!/bin/bash
+# Push more work (subframes) to test brenda-node while in poll mode.
+set -e
+B=$HOME/src/brenda
+cd $B
+export BRENDA_CONFIG=$B/test/brenda.conf
+./brenda-work -s 21 -e 30 -X 2 -Y 2 -T test/task-script-subframe push

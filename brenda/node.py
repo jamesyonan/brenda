@@ -63,14 +63,26 @@ def s3_push_process(opts, args, conf, outdir):
     sys.exit(0)
 
 def run_tasks(opts, args, conf):
+    def write_done_file():
+        with open("DONE", "w") as f:
+            f.write(aws.get_done(opts, conf)+'\n')
+
+    def read_done_file():
+        try:
+            with open('DONE') as f:
+                ret = f.readline().strip()
+        except:
+            ret = 'exit'
+        aws.validate_done(ret)
+        return ret
+
     def task_complete_accounting(task_count):
         # update some info files if we are running in daemon mode
-        if opts.daemon:
-            # number of tasks we have completed so far
-            utils.write_atomic('task_count', "%d\n" % (task_count,))
+        # number of tasks we have completed so far
+        utils.write_atomic('task_count', "%d\n" % (task_count,))
 
-            # timestamp of completion of last task
-            utils.write_atomic('task_last', "%d\n" % (time.time(),))
+        # timestamp of completion of last task
+        utils.write_atomic('task_last', "%d\n" % (time.time(),))
 
     def signal_handler(signal, frame):
         print "******* SIGNAL %r, exiting" % (signal,)
@@ -134,8 +146,7 @@ def run_tasks(opts, args, conf):
                 task.proc = None
                 task.retcode = None
                 task.outdir = None
-                local.task_id_counter += 1
-                task.id = local.task_id_counter
+                task.id = 0
 
                 # Get a task from the SQS work queue.  This is normally
                 # a short script that runs blender to render one
@@ -151,11 +162,15 @@ def run_tasks(opts, args, conf):
 
                 # process task
                 if task.msg is not None:
+                    # assign an ID to task
+                    local.task_id_counter += 1
+                    task.id = local.task_id_counter
+
                     # register active task
                     local.task_active = task
 
                     # create output directory
-                    task.outdir = os.path.realpath(os.path.join(work_dir, "brenda-outdir%d.tmp" % (task.id,)))
+                    task.outdir = os.path.join(work_dir, "brenda-outdir%d.tmp" % (task.id,))
                     utils.rmtree(task.outdir)
                     utils.mkdir(task.outdir)
 
@@ -255,10 +270,14 @@ def run_tasks(opts, args, conf):
                     local.task_push = local.task_active
                     local.task_active = None
 
-                # if no active task and no S3-push task, we are done
+                # if no active task and no S3-push task, we are done (unless DONE is set to "poll")
                 if not local.task_active and not local.task_push:
-                    break;
-     
+                    if read_done_file() == "poll":
+                        print "Polling for more work..."
+                        time.sleep(15)
+                    else:
+                        break
+
         finally:
             cleanup_all()
 
@@ -286,12 +305,14 @@ def run_tasks(opts, args, conf):
     utils.rm('task_count')
     utils.rm('task_last')
 
-    # If shutdown flag is set, create an empty file called "shutdown"
-    # that we will reference later as an indication to shut down
-    # on script exit.
-    if opts.shutdown or int(conf.get('SHUTDOWN', '0')):
-        with open("shutdown", "w") as f:
-            f.write("")
+    # create Blender temporary directory
+    tmp_dir = os.path.join(work_dir, 'tmp')
+    if not os.path.isdir(tmp_dir):
+        utils.mkdir(tmp_dir)
+    os.environ['TMP'] = tmp_dir
+
+    # save the value of DONE config var
+    write_done_file()
 
     # Get our spot instance request, if it exists
     spot_request_id = None
@@ -320,8 +341,8 @@ def run_tasks(opts, args, conf):
         # execute the task loop
         error.retry(conf, task_loop)
 
-        # if shutdown file exists, do a shutdown now as we exit
-        if os.path.exists("shutdown"):
+        # if "DONE" file == "shutdown", do a shutdown now as we exit
+        if read_done_file() == "shutdown":
             if spot_request_id:
                 try:
                     # persistent spot instances must be explicitly cancelled, or
@@ -367,9 +388,9 @@ def get_s3_project(conf, s3url, proj_dir):
             # Use "unzip" tool for .zip files,
             # and "tar xf" for everything else.
             if fn.lower().endswith('.zip'):
-                utils.system(["unzip", fn]);
+                utils.system(["unzip", fn])
             else:
-                utils.system(["tar", "xf", fn]);
+                utils.system(["tar", "xf", fn])
             utils.rm(fn)
 
         utils.rmtree(proj_dir)

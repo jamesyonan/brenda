@@ -1,1 +1,1 @@
-blender -b *.blend -F PNG -o $OUTDIR/frame_###### $FRAME -t 0 -a
+blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s $START -e $END -j $STEP -t 0 -a

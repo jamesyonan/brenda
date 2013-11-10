@@ -6,6 +6,12 @@ you can accelerate complex render tasks by distributing the
 work to tens, hundreds, or even thousands of virtual machines
 in the cloud.
 
+Brenda is specifically designed to take advantage of the
+lower-cost EC2 spot market and is fault-tolerant against
+instances being created and terminated at random during
+the course of a render job, as is often the case with spot
+market volatility.
+
 You can view James Yonan's Brenda talk at Blender
 Conference 2013 here: http://www.youtube.com/watch?v=_Oqo383uviw
 
@@ -29,7 +35,11 @@ detailed help for each tool, run the tool with the -h option.
    a standard unix shell where ssh and rsync are available and
    can be run from the command line.
 
-4. brenda-node -- worker script to be run on the render farm nodes
+4. brenda-ebs -- a simple tool that creates a new EBS volume of
+   a specified size and attaches it to a newly started t1.micro
+   EC2 instance.
+
+5. brenda-node -- worker script to be run on the render farm nodes
    themselves.  It reads tasks from an SQS queue, executes the task
    (usually render operations), and copies the task products (such
    as rendered PNG frames) to S3.  brenda-node is usually not run
@@ -58,16 +68,14 @@ $ git clone http://github.com/jamesyonan/brenda.git
 $ cd brenda
 $ python setup.py install
 
-You will need an RSA-based SSH key to access the VMs (virtual machines) that we
-will spawn using the AWS EC2 service.  These VMs are often referred to as
+You will need an RSA-based SSH key to access the VMs (virtual machines) that
+we will spawn using the AWS EC2 service.  These VMs are often referred to as
 "instances", and we will be creating many of these to act as worker nodes in
 our render farm.
 
-The Brenda client software assumes that you have a public key in
-$HOME/.ssh/id_rsa.pub and a private key in $HOME/.ssh/id_rsa.
-If you don't have these keys, you can easily generate them:
-
-$ ssh-keygen -t rsa
+If you have an existing ssh key pair in ~/.ssh/id_rsa.pub and ~/.ssh/id_rsa,
+the Brenda client software will use it.  Otherwise, the software will generate
+a new key pair on AWS and download the private key to ~/.ssh/id_rsa.brenda
 
 Next, obtain the AWS "Access Key" and "Secret Key" from the AWS management
 console.  These credentials will allow the Brenda client tools to access
@@ -155,9 +163,9 @@ To verify that the file was copied, list the files in the bucket:
 $ s3cmd ls s3://PROJECT_BUCKET
 
 Next, we will create a Brenda configuration file.  The Brenda
-client tools will look for the configuration file in $HOME/.brenda.conf
+client tools will look for the configuration file in ~/.brenda.conf
 
-Create $HOME/.brenda.conf now with the following content, making sure
+Create ~/.brenda.conf now with the following content, making sure
 to replace PROJECT_BUCKET and FRAME_BUCKET with the names you chose
 above.
 
@@ -165,7 +173,7 @@ INSTANCE_TYPE=m3.xlarge
 BLENDER_PROJECT=s3://PROJECT_BUCKET/myproject.tar.gz
 WORK_QUEUE=sqs://FRAME_BUCKET
 RENDER_OUTPUT=s3://FRAME_BUCKET
-SHUTDOWN=1
+DONE=shutdown
 
 To explain the above configuration settings in detail:
 
@@ -182,7 +190,7 @@ purpose of staging and sequencing the tasks in our render.
 RENDER_OUTPUT is the name of an S3 bucket that will contain our
 rendered frames.
 
-SHUTDOWN=1 tells the render farm instances that they should
+DONE=shutdown tells the render farm instances that they should
 automatically shut themselves down after the render is complete.
 
 In the next step, we will create the Work Queue for our render
@@ -218,7 +226,7 @@ A script template describes how to run Blender to accomplish a unit of work.
 Suppose that we want a unit of work to be the rendering of a single PNG
 frame.  In this case, our script template would be this:
 
-blender -b *.blend -F PNG -o $OUTDIR/frame_###### $FRAME -t 0 -a
+blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s $START -e $END -j $STEP -t 0 -a
 
 Using a text editor, create a file called "frame-template" that contains
 the above line.  This is a simple template that is designed to render one
@@ -282,9 +290,10 @@ as render farm workers include:
 
 Instance                           Baseline Spot Price as of 2013.11
 --------                           ---------------------------------
-1. m3.xlarge (Brenda default)      US$0.0575/hour
-2. m3.2xlarge                      US$0.115/hour
-3. c1.xlarge                       US$0.07/hour
+1. c1.xlarge                       US$0.07/hour
+2. m2.xlarge (default)             US$0.035/hour
+3. m3.2xlarge                      US$0.115/hour
+4. m3.xlarge                       US$0.0575/hour
 
 To see the current spot price of a given EC2 instance in several
 availability zones:
@@ -455,6 +464,131 @@ Kill all active instances:
 $ brenda-run -T stop
 
 
+NOTES -- stopping the render farm
+---------------------------------
+
+The simplest way to stop the render farm after all frames have been rendered
+is by setting the config var "DONE=shutdown" in your ~/.brenda.conf file
+before you start a run.
+
+Or to force a shutdown of the whole farm right now:
+
+$ brenda-run -T stop
+
+However, there are some useful variations to the shutdown procedure, such as
+the case where you have a large number of instances about to transition into
+their next billable hour, but the render farm work queue is almost (but not
+quite) empty.
+
+For this case, Brenda includes a "prune" capability to reduce the number of
+running instances to a specified value.  For example, to reduce the number
+of running instances to 4:
+
+$ brenda-tool -T prune 4
+
+The prune capability is smart about stopping instances -- it will
+stop instances that have most recently completed a task, to minimize the
+amount of lost work, i.e. tasks terminated before completion.
+
+If you only want prune to consider instances close to transitioning to
+their next billable hour, you can use the threshold (-T) parameter.
+
+For example, if you only want prune to consider instances where the
+minute field of the uptime value is >= 55 minutes, use a threshold
+value of 55:
+
+$ brenda-tool -T -t 55 prune 4
+
+To try out the command without actually terminating any instances, add
+the -d flag (dry run).
+
+
+NOTES -- performance evaluation
+-------------------------------
+
+AWS has many instance types at various levels of price and performance.
+
+How to determine the optimal instance type for render farm use?
+
+To help answer this question, Brenda contains a tool that will evaluate the
+performance of a render-farm run in terms of frames rendered per US$.
+
+First set up a run using "brenda-work ... push" as documented in the tutorial
+above, but also add the "-r" flag to randomize the work queue.  This will
+help to normalize the average render time per frame for our analysis.
+
+This command will add frames 1 to 500 to the work queue using the
+"frame-template" script introduced above in the tutorial:
+
+$ brenda-work -T frame-template -e 500 -r push
+
+Next, begin a render farm run using the entire set of AWS instances appropriate
+for render farm usage.  This script will set up spot instance requests for
+all such AWS instance types at their baseline spot price.  Larger numbers of
+instances for slower instance types are used to balance the data samples for
+slower instance types so the results for these instance types will be
+statistically significant.  Note that these instances, if successfully
+instantiated, will cost US$1.11/hour.
+
+#!/bin/bash
+brenda-run -N 8 -i m1.medium -p 0.013 -P spot
+brenda-run -N 4 -i m1.large -p 0.026 -P spot
+brenda-run -N 2 -i m1.xlarge -p 0.052 -P spot
+brenda-run -N 2 -i m3.xlarge -p 0.0575 -P spot
+brenda-run -N 1 -i m3.2xlarge -p 0.115 -P spot
+brenda-run -N 4 -i c1.medium -p 0.018 -P spot
+brenda-run -N 1 -i c1.xlarge -p 0.07 -P spot
+brenda-run -N 4 -i m2.xlarge -p 0.035 -P spot
+brenda-run -N 2 -i m2.2xlarge -p 0.071 -P spot
+brenda-run -N 1 -i m2.4xlarge -p 0.14 -P spot
+
+Once the instances are up and running, use the following command to
+analyze the performance of the run:
+
+$ brenda-tool perf
+
+The output below is an analysis of an actual render farm run of a 500 frame
+fluid simulation, rendered with Cycles at 1920x1080, using a pre-baked fluid.
+
+The output shows the render farm performance by both "Tasks per hour"
+and "Tasks per US$".  Note that "Tasks" usually equals "Frames" if you
+set up your work queue using the common usage where each task renders
+a single frame.
+
+-----------------------
+Tasks per hour (137.90)
+  m2.4xlarge 28.15
+  m3.2xlarge 27.75
+  c1.xlarge 24.35
+  m2.2xlarge 15.52
+  m3.xlarge 13.18
+  m1.xlarge 11.05
+  m2.xlarge 8.49
+  m1.large 5.07
+  m1.medium 2.77
+Tasks per US$
+  c1.xlarge 347.81
+  m2.xlarge 242.56
+  m3.2xlarge 241.29
+  m3.xlarge 229.22
+  m2.2xlarge 218.53
+  m1.medium 213.37
+  m1.xlarge 212.46
+  m2.4xlarge 201.07
+  m1.large 194.91
+-----------------------
+
+The results of this analysis is that the "c1.xlarge" instance type is
+the "winner", rendering 347.81 frames per US$.  Note that these
+performance data are contingent on the particular instance type being
+available at its baseline spot price.  If a particular instance
+type is overbid, the spot instance requests will not be instantiated,
+causing no data to be available for that instance type.  If you raise
+your bidding price to meet or exceed the market price for overbid
+instance types (to force them to run), that would skew the results for
+those instance types, pushing them down in the "Tasks per US$" ranking.
+
+
 NOTES -- subframe rendering
 ---------------------------
 
@@ -487,7 +621,7 @@ bpy.context.scene.render.border_min_y = $SF_MIN_Y
 bpy.context.scene.render.border_max_y = $SF_MAX_Y
 bpy.context.scene.render.use_border = True
 EOF
-blender -b *.blend -P subframe.py -F PNG -o $OUTDIR/frame_######_X-$SF_MIN_X-$SF_MAX_X-Y-$SF_MIN_Y-$SF_MAX_Y $FRAME -t 0 -a
+blender -b *.blend -P subframe.py -F PNG -o $OUTDIR/frame_######_X-$SF_MIN_X-$SF_MAX_X-Y-$SF_MIN_Y-$SF_MAX_Y -s $START -e $END -j $STEP -t 0 -a
 
 Save this template in the file subframe-template, then generate the work
 queue as follows.  Assuming that we want to break each frame into 64 8x8
@@ -548,14 +682,44 @@ EBS volume, so Brenda can locate it.  EBS volumes are persistent,
 so you can maintain a volume that contains the current state of your
 project, while adding, removing, and modifying files as needed.
 
+Brenda has limited support for creating and managing EBS volumes.
+For example, to create a new EBS volume that is 4 GB in size, and
+attach it to a newly running t1.micro instance on /mnt, use this
+command:
+
+$ brenda-ebs -m -s 4 new
+
+Once the instance is up, you can copy your project files, bakes, 
+and data using rsync.  For example, this command will copy
+fluid.blend and cache_fluid to the top-level directory of the EBS
+volume:
+
+$ brenda-tool rsync -av fluid.blend cache_fluid HOST:/mnt/
+
+When you are finished copying files to the EBS volume, unmount it and
+shut down the instance it is attached to:
+
+$ brenda-tool ssh umount /mnt
+$ brenda-run stop
+
 An EBS volume, by itself, can only be connected to a single instance
 at a time, so before we begin a render, we must "snapshot" the
 EBS volume so we can make a copy of it available to all of the instances
 in the render farm.  The AWS web console provides a full set of tools
 for creating EBS volumes and snapshotting them.
 
-Once you have your EBS snapshot ready, you can specify it in the
-.brenda.conf file by using an ebs:// URL:
+If you created your volume with the "brenda-ebs" command above,
+you can snapshot it by going to EC2 / Volumes in the AWS management
+console, right click on the volume you just created (you can identify
+it by its capacity), select "Create Snapshot", and select a name
+for the snapshot.  Creating snapshots is not instantaneous -- go to the
+Snapshots panel to verify that the snapshot is complete.  At that
+point you might want to clean up by terminating the t1.micro instance we
+used to initially access the volume (see Instances panel) and deleting
+the volume that the snapshot was based on (see Volume panel).
+
+Once you have your EBS snapshot ready, you can specify it in your
+~/.brenda.conf file by using an ebs:// URL:
 
   BLENDER_PROJECT=ebs://EBS_SNAPSHOT_NAME
 
@@ -565,7 +729,9 @@ such as "my-project".
 
 Note: When using an EBS snapshot as your BLENDER_PROJECT, make
       sure that your .blend file is in the top level of the
-      EBS volume, so Brenda can locate it.
+      EBS volume, so Brenda can locate it.  Also make sure that
+      all paths used in your .blend file are relative, so that
+      the render farm instances will be able to follow them.
 
 Brenda also supports mounting additional EBS snapshots (up to 65
 more) that appear as subdirectories in your project directory,

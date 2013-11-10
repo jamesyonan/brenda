@@ -1,0 +1,1 @@
+python $HOME/src/brenda/test/perframe.py --pause 0 -o $OUTDIR/frame_######_X-$SF_MIN_X-$SF_MAX_X-Y-$SF_MIN_Y-$SF_MAX_Y -s $START -e $END -j $STEP

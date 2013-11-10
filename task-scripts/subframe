@@ -6,4 +6,4 @@ bpy.context.scene.render.border_min_y = $SF_MIN_Y
 bpy.context.scene.render.border_max_y = $SF_MAX_Y
 bpy.context.scene.render.use_border = True
 EOF
-blender -b *.blend -P subframe.py -F PNG -o $OUTDIR/frame_######_X-$SF_MIN_X-$SF_MAX_X-Y-$SF_MIN_Y-$SF_MAX_Y $FRAME -t 0 -a
+blender -b *.blend -P subframe.py -F PNG -o $OUTDIR/frame_######_X-$SF_MIN_X-$SF_MAX_X-Y-$SF_MIN_Y-$SF_MAX_Y -s $START -e $END -j $STEP -t 0 -a

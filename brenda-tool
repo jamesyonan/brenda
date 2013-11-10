@@ -21,7 +21,7 @@ from brenda import aws, config, tool, version
 
 def main():
     usage = """\
-usage: %s [options] ssh|rsync|instances|prune [args...]
+usage: %s [options] ssh|rsync|instances|perf|prune [args...]
 Version:
   Brenda %s
 Synopsis:
@@ -30,6 +30,7 @@ Commands:
   ssh [args...]   : run ssh command on all instances and show the output.
   rsync [args...] : rsync file(s) to/from all instances, use "HOST" as
                     a macro for instance hostname.
+  perf            : show performance/cost statistics
   instances       : show all instances and their uptime.
   prune <N_remaining> : kill running instances such that only N_remaining
                         instances will be retained.  Brenda uses a smart
@@ -38,11 +39,10 @@ Commands:
                         have most recently finished a task to minimize
                         the amount of lost work.
 Command abbreviations:
-  brenda-tool commands can be abbreviated by their first letter:
+  some brenda-tool commands can be abbreviated by their first letter:
     s : ssh
     r : rsync
     i : instances
-    p : prune
 Required config vars:
   AWS_ACCESS_KEY : Amazon Web Services access key.
   AWS_SECRET_KEY : Amazon Web Services secret key.
@@ -97,6 +97,9 @@ Examples:
                       help="AMI ID of instances to match on, overrides config variable AMI_ID"+aws.get_default_ami_with_fmt(", default=%s"))
     parser.add_option("-t", "--threshold", type="int", dest="threshold", default=0,
                       help="Match only on instances whose uptime is > n minutes after the hour, default=%default")
+    parser.add_option("", "--imatch", dest="imatch",
+                      help="Match only on specific instance type(s), provide as a comma-separated list of instance types")
+
     parser.add_option("-T", "--terminate", action="store_true", dest="terminate",
                       help="For prune, terminate instances instead of stopping them (required for AWS spot instances)")
     parser.add_option("-d", "--dry-run", action="store_true", dest="dry_run",
@@ -120,8 +123,10 @@ Examples:
         tool.ssh(opts, conf, args[1:])
     elif args[0] == 'rsync' or args[0] == 'r':
         tool.rsync(opts, conf, args[1:])
-    elif args[0] == 'prune' or args[0] == 'p':
+    elif args[0] == 'prune':
         tool.prune(opts, conf, args[1:])
+    elif args[0] == 'perf':
+        tool.perf(opts, conf, args[1:])
     else:
         print >>sys.stderr, "unrecognized command:", args[0]
         sys.exit(2)

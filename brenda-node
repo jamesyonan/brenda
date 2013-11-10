@@ -73,7 +73,10 @@ Optional config vars:
   ADDITIONAL_EBS_0, ADDITIONAL_EBS_1, ... : Additional EBS snapshots that
     were attached to the instance and should be mounted before Blender is
     started.  See brenda-run documentation for more info on this feature.
-  SHUTDOWN : shut down the instance on completion of all tasks (0|1, default=0).""" % (sys.argv[0], version.VERSION)
+  DONE : what to do when render job is complete, choices are:
+         'shutdown' -- terminate the instance
+         'poll'     -- continue to poll the work queue for new tasks
+         'exit'     -- exit but leave the instance running (default)""" % (sys.argv[0], version.VERSION)
     parser = optparse.OptionParser(usage)
 
     parser.add_option("-c", "--config", dest="config",

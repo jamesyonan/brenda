@@ -1,2 +1,2 @@
 # An AMI that contains Blender and Brenda (may be None)
-AMI_ID="ami-af2179c6"
+AMI_ID="ami-3d7d2754"

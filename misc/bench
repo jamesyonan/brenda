@@ -1,0 +1,11 @@
+#!/bin/bash
+brenda-run -N 8 -i m1.medium -p 0.013 -P spot
+brenda-run -N 4 -i m1.large -p 0.026 -P spot
+brenda-run -N 2 -i m1.xlarge -p 0.052 -P spot
+brenda-run -N 2 -i m3.xlarge -p 0.0575 -P spot
+brenda-run -N 1 -i m3.2xlarge -p 0.115 -P spot
+brenda-run -N 4 -i c1.medium -p 0.018 -P spot
+brenda-run -N 1 -i c1.xlarge -p 0.07 -P spot
+brenda-run -N 4 -i m2.xlarge -p 0.035 -P spot
+brenda-run -N 2 -i m2.2xlarge -p 0.071 -P spot
+brenda-run -N 1 -i m2.4xlarge -p 0.14 -P spot

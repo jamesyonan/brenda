@@ -1,0 +1,7 @@
+*.so
+*.tmp
+*.pyc
+task_count
+task_last
+DONE
+test/work

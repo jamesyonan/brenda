@@ -6,7 +6,9 @@ export BRENDA_CONFIG=$B/test/brenda.conf
 rm -rf $B/test/work
 s3cmd del -rf s3://troubleinparadise
 ./brenda-work reset
-./brenda-work -e 100 -T test/task-script push
+./brenda-work -e 10 -T test/task-script push
 ./brenda-node -c test/brenda.conf
-s3cmd ls s3://troubleinparadise | wc
-rm -rf $B/test/work
+s3cmd ls s3://troubleinparadise >ls.tmp
+cat ls.tmp
+wc ls.tmp
+rm ls.tmp

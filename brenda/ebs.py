@@ -68,5 +68,5 @@ def create_instance_with_ebs(opts, conf, new):
     print "ISTORE DEV", istore_dev
     if not opts.dry_run:
         ec2 = aws.get_ec2_conn(conf)
-        reservation = ec2.run_instances(**run_args);
+        reservation = ec2.run_instances(**run_args)
         print reservation

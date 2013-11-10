@@ -45,10 +45,17 @@ def push(opts, args, conf):
     # build tasklist
     tasklist = []
     for fnum in xrange(opts.start, opts.end+1, opts.task_size):
+        script = task_script
         start = fnum
         end = min(fnum + opts.task_size - 1, opts.end)
-        framespec = "-s %d -e %d -j 1" % (start, end)
-        script = task_script.replace('$FRAME', framespec)
+        step = 1
+        for key, value in (
+              ("$FRAME", "-s %d -e %d -j %d" % (start, end, step)),
+              ("$START", "%d" % (start,)),
+              ("$END", "%d" % (end,)),
+              ("$STEP", "%d" % (step,))
+              ):
+            script = script.replace(key, value)
         if subframe_iterator_defined(opts):
             for macro_list in subframe_iterator(opts):
                 sf_script = script

@@ -1,0 +1,8 @@
+#!/bin/bash
+# Push more work to test brenda-node while in poll mode.
+# This time use a task size of 2.
+set -e
+B=$HOME/src/brenda
+cd $B
+export BRENDA_CONFIG=$B/test/brenda.conf
+./brenda-work -s 11 -e 20 -S 2 -T test/task-script push

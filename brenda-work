@@ -42,7 +42,7 @@ Optional config vars:
                        worker doesn't acknowledge or complete the pending
                        task over this period of time.
 Sample task script (single frame render):
-  blender -b *.blend -F PNG -o $OUTDIR/frame_###### $FRAME -t 0 -a
+  blender -b *.blend -F PNG -o $OUTDIR/frame_###### -s $START -e $END -j $STEP -t 0 -a
 Sample task script (subframe render):
   cat >subframe.py <<EOF
   import bpy
@@ -52,7 +52,7 @@ Sample task script (subframe render):
   bpy.context.scene.render.border_max_y = $SF_MAX_Y
   bpy.context.scene.render.use_border = True
   EOF
-  blender -b *.blend -P subframe.py -F PNG -o $OUTDIR/frame_######_X-$SF_MIN_X-$SF_MAX_X-Y-$SF_MIN_Y-$SF_MAX_Y $FRAME -t 0 -a
+  blender -b *.blend -P subframe.py -F PNG -o $OUTDIR/frame_######_X-$SF_MIN_X-$SF_MAX_X-Y-$SF_MIN_Y-$SF_MAX_Y -s $START -e $END -j $STEP -t 0 -a
 Examples:
   Using a task script such as "single frame render" above, push a separate
   task to render each frame from 1 to 1440:
@@ -77,7 +77,7 @@ Examples:
                       help="Show tasks that would be pushed to work queue, but don't actually push anything")
 
     parser.add_option("-T", "--task-script", dest="task_script",
-                      help="Script template file for a single task.  Macros: $OUTDIR: render output directory, $FRAME: -s, -e, and -j parameters.")
+                      help="Script template file for a single task.  Macros: $OUTDIR: render output directory, $START, $END, $STEP: frame parameters.")
 
     parser.add_option("-s", "--start", type="int", dest="start", default=1,
                       help="Start frame to render, default=%default")

@@ -21,7 +21,7 @@ from brenda import aws, config, run, version
 
 def main():
     usage = """\
-usage: %s [options] demand|spot|script|price|stop|cancel|status|init
+usage: %s [options] demand|spot|script|price|stop|cancel|status|init|reset-keys
 Version:
   Brenda %s
 Synopsis:
@@ -38,6 +38,8 @@ Commands:
   status : show status of current EC2 spot requests and instances.
   init   : do one-time initialization of new AWS account by creating
            "brenda" SSH key name and Security Group.
+  reset-keys  : undo the effects of "init" by deleting "brenda" SSH key
+                name and Security Group.
 Required config vars:
   AWS_ACCESS_KEY : Amazon Web Services access key.
   AWS_SECRET_KEY : Amazon Web Services secret key.
@@ -73,6 +75,11 @@ Optional config vars:
     Example: ADDITIONAL_EBS_0="ebs://snap-ab957cc2,freebase" will
     mount the EBS snapshot snap-ab957cc2 in a directory called
     freebase in the same directory as the Blender project.
+  USE_ISTORE : boolean (0|1) that controls whether render-farm work
+               dir will be placed on an EC2 instance store volume
+               (/mnt/brenda, override with WORK_DIR).
+               Defaults to 1 on instances that support instance store
+               volumes, 0 otherwise.
   [Note: all optional vars supported by brenda-node can also be specified here]
 Examples:
   Show current running EC2 instances and spot requests.
@@ -112,6 +119,15 @@ Examples:
                       help="Start the EC2 instances in the idle state, without automatically running brenda-node to begin task processing")
     parser.add_option("-t", "--threshold", type="int", dest="threshold", default=0,
                       help="Match only on instances whose uptime is > n minutes after the hour, default=%default")
+    parser.add_option("", "--imatch", dest="imatch",
+                      help="Match only on specific instance type(s), provide as a comma-separated list of instance types")
+
+    parser.add_option("", "--no-ssh-keys", action="store_true", dest="no_ssh_keys",
+                      help="for init/reset-keys, don't create/remove a 'brenda' ssh key pair on AWS")
+    parser.add_option("", "--no-security-group", action="store_true", dest="no_security_group",
+                      help="for init/reset-keys, don't create/remove a 'brenda' security group on AWS")
+    parser.add_option("", "--aws-ssh-pull", action="store_true", dest="aws_ssh_pull",
+                      help="don't use local ssh keys, instead pull them from AWS")
 
     parser.add_option("-d", "--dry-run", action="store_true", dest="dry_run",
                       help="show what would be done without actually doing it")
@@ -142,6 +158,8 @@ Examples:
         run.status(opts, conf)
     elif args[0] == 'init':
         run.init(opts, conf)
+    elif args[0] == 'reset-keys':
+        run.reset_keys(opts, conf)
     elif args[0] == 'script':
         run.script(opts, conf)
     else:

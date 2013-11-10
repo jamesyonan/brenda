@@ -202,6 +202,10 @@ def filter_instances(opts, conf, hostset=None):
 
     now = time.time()
     ami = utils.get_opt(opts.ami, conf, 'AMI_ID', default=AMI_ID)
+    if opts.imatch:
+        imatch = frozenset(opts.imatch.split(','))
+    else:
+        imatch = None
     if hostset is None:
         if getattr(opts, 'hosts_file', None):
             with open(opts.hosts_file, 'r') as f:
@@ -211,6 +215,7 @@ def filter_instances(opts, conf, hostset=None):
     inst = [i for i in get_ec2_instances(conf)
             if i.image_id and i.public_dns_name
             and threshold_test(i.launch_time)
+            and (imatch is None or i.instance_type in imatch)
             and (ami is None or ami == i.image_id)
             and (hostset is None or i.public_dns_name in hostset)]
     inst.sort(key = lambda i : (i.image_id, i.launch_time, i.public_dns_name))
@@ -251,6 +256,25 @@ def get_ssh_identity_fn(opts, conf):
         v = os.path.join(os.path.expanduser("~"), '.ssh', 'id_rsa')
     return v
 
+def get_brenda_ssh_identity_fn(opts, conf, mkdir=False):
+    ssh_dir = os.path.join(os.path.expanduser("~"), '.ssh')
+    if mkdir and not os.path.isdir(ssh_dir):
+        os.mkdir(ssh_dir)
+    return os.path.join(ssh_dir, "id_rsa.brenda")
+
+def local_ssh_keys_exist(opts, conf):
+    return (os.path.exists(get_ssh_pubkey_fn(opts, conf))
+            and os.path.exists(get_ssh_identity_fn(opts, conf))
+            and not os.path.exists(get_brenda_ssh_identity_fn(opts, conf)))
+
+def get_adaptive_ssh_identity_fn(opts, conf):
+    fn = get_brenda_ssh_identity_fn(opts, conf)
+    if not os.path.exists(fn):
+        fn = get_ssh_identity_fn(opts, conf)
+        if not os.path.exists(fn):
+            raise ValueError("No ssh private key exists, did you run 'brenda-run init'?")
+    return fn
+
 def get_default_ami_with_fmt(fmt):
     if AMI_ID:
         return fmt % (AMI_ID,)
@@ -289,8 +313,8 @@ def translate_volume_name(conf, vol_name, volumes=None):
             return n
 
 def get_work_dir(conf):
-    work_dir = conf.get('WORK_DIR', '/mnt')
-    if work_dir and not os.path.isdir(work_dir):
+    work_dir = os.path.realpath(conf.get('WORK_DIR', '.'))
+    if not os.path.isdir(work_dir):
         utils.makedirs(work_dir)
     return work_dir
 
@@ -348,6 +372,11 @@ def get_instance_id_self():
     the_page = response.read()
     return the_page
 
+def get_spot_request_dict(conf):
+    ec2 = get_ec2_conn(conf)
+    requests = ec2.get_all_spot_instance_requests()
+    return { sir.id: sir for sir in requests }
+
 def get_spot_request_from_instance_id(conf, iid):
     instances = get_ec2_instances(conf, instance_ids=(iid,))
     if instances:
@@ -370,3 +399,20 @@ def config_file_name():
         home = os.path.expanduser("~")
         config = os.path.join(home, ".brenda.conf")
     return config
+
+def validate_done(d):
+    done_choices = ('exit', 'shutdown', 'poll')
+    if d not in done_choices:
+        raise ValueError("DONE config var must be one of %r" % (done_choices,))
+
+def get_done(opts, conf):
+    if getattr(opts, 'shutdown', False):
+        return 'shutdown'
+    else:
+        d = conf.get('DONE')
+        if d:
+            validate_done(d)
+            return d
+        else:
+            sd = int(conf.get('SHUTDOWN', '0'))
+            return 'shutdown' if sd else 'exit'

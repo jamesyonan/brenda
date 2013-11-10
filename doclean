@@ -1,5 +1,6 @@
 #!/bin/bash
 # remove build products
 rm -rf build *.so *.tmp
-rm -f task_last task_count
+rm -f task_last task_count DONE
 rm -f $(find . | grep '\.pyc$')
+rm -rf test/work

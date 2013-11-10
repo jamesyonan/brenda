@@ -1,1 +1,1 @@
-python $HOME/src/brenda/test/perframe.py --pause 0 -o $OUTDIR $FRAME
+python $HOME/src/brenda/test/perframe.py --pause 0 -o $OUTDIR/frame_###### -s $START -e $END -j $STEP
