@@ -22,6 +22,10 @@ elif [ "$1" = "3" ]; then
     echo S3CMD
     brenda-tool ssh 'pip install -U s3cmd'
 
+    # fixme -- remove when unzip added to base
+    echo UNZIP
+    brenda-tool ssh 'apt-get install -y unzip'
+
     echo BRENDA CLEAN
     cd ~/src/brenda
     ./doclean

@@ -793,7 +793,7 @@ $ perl -p -i.bak -e 's/^disable_root: 1/disable_root: 0/' /etc/cloud/cloud.cfg
 $ perl -p -i.bak -e 's/.*ssh-rsa/ssh-rsa/' /root/.ssh/authorized_keys
 $ add-apt-repository -y ppa:irie/blender
 $ apt-get update
-$ apt-get install -y blender python-pip gcc python-dev libcurl4-openssl-dev git
+$ apt-get install -y blender python-pip gcc python-dev libcurl4-openssl-dev git unzip
 $ pip install -U boto
 $ pip install -U s3cmd
 
