@@ -375,7 +375,7 @@ def get_instance_id_self():
 def get_spot_request_dict(conf):
     ec2 = get_ec2_conn(conf)
     requests = ec2.get_all_spot_instance_requests()
-    return { sir.id: sir for sir in requests }
+    return dict([(sir.id, sir) for sir in requests])
 
 def get_spot_request_from_instance_id(conf, iid):
     instances = get_ec2_instances(conf, instance_ids=(iid,))

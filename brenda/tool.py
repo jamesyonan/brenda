@@ -147,7 +147,7 @@ def perf(opts, conf, args):
 
     script = ['if', '[', '-f', 'task_count', ']', '&&', '[', '-f', 'task_last', '];', 'then', 'cat', 'task_count;', 'cat', 'task_last;', 'else', 'echo', '0;', 'fi']
     instances = aws.filter_instances(opts, conf)
-    idict = { i.dns_name: i for i in instances }
+    idict = dict([(i.dns_name, i) for i in instances])
     sdict = aws.get_spot_request_dict(conf)
     data = {}
     for i in run_cmd_list(opts, conf, ssh_cmd_list(opts, conf, script, instances), show_output=False, capture_stderr=False):
@@ -185,9 +185,10 @@ def perf(opts, conf, args):
             tpd.append((tasks_per_dollar, itype))
     tph.sort(reverse=True)
     tpd.sort(reverse=True)
-    print "Tasks per hour (%.02f)" % (total_tasks / total_uptime * total_n,)
-    for tasks_per_hour, itype in tph:
-        print "  %s %.02f" % (itype, tasks_per_hour)
-    print "Tasks per US$"
-    for tasks_per_dollar, itype in tpd:
-        print "  %s %.02f" % (itype, tasks_per_dollar)
+    if total_n:
+        print "Tasks per hour (%.02f)" % (total_tasks / total_uptime * total_n,)
+        for tasks_per_hour, itype in tph:
+            print "  %s %.02f" % (itype, tasks_per_hour)
+        print "Tasks per US$"
+        for tasks_per_dollar, itype in tpd:
+            print "  %s %.02f" % (itype, tasks_per_dollar)
