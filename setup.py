@@ -17,7 +17,7 @@ setup(name = "Brenda",
       ext_modules = [paracurl_ext],
 
       data_files=[('brenda/task-scripts', ['task-scripts/frame', 'task-scripts/subframe']),
-                  ('brenda/doc', ['README', 'doc/brenda-talk-blendercon-2013.pdf'])],
+                  ('brenda/doc', ['README.md', 'doc/brenda-talk-blendercon-2013.pdf'])],
 
       author = "James Yonan",
       author_email = "james@openvpn.net",
