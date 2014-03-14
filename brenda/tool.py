@@ -161,13 +161,13 @@ def perf(opts, conf, args):
             tasks = task_count_last(i)
             if tasks:
                 task_count, task_last = tasks
-            uptime = aws.get_uptime(task_last, inst.launch_time) / 3600.0
-            stat = data.setdefault(inst.instance_type, dict(n=0, uptime_sum=0.0, task_sum=0, price_sum=0.0))
-            stat['n'] += 1
-            stat['uptime_sum'] += uptime
-            stat['task_sum'] += task_count
-            if price is not None:
-                stat['price_sum'] += price
+                uptime = aws.get_uptime(task_last, inst.launch_time) / 3600.0
+                stat = data.setdefault(inst.instance_type, dict(n=0, uptime_sum=0.0, task_sum=0, price_sum=0.0))
+                stat['n'] += 1
+                stat['uptime_sum'] += uptime
+                stat['task_sum'] += task_count
+                if price is not None:
+                    stat['price_sum'] += price
     tph= []
     tpd = []
     total_tasks = 0.0
