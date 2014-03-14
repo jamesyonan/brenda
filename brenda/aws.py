@@ -319,7 +319,7 @@ def get_work_dir(conf):
     return work_dir
 
 def add_instance_store(opts, conf, bdm, itype):
-    if not (itype.startswith('t1.') or itype.startswith('m3.')):
+    if not itype.startswith('t1.'):
         dev = utils.blkdev(0, istore=True)
         bdm[dev] = boto.ec2.blockdevicemapping.EBSBlockDeviceType(ephemeral_name='ephemeral0')
         return dev
