@@ -233,13 +233,13 @@ def shutdown(opts, conf, iids):
     # or EC2 will automatically requeue the spot instance request
     if opts.terminate:
         print "TERMINATE", iids
-        if not opts.dry_run:
+        if not opts.dry_run and iids:
             conn = get_ec2_conn(conf)
             cancel_spot_requests_from_instance_ids(conn, instance_ids=iids)
             conn.terminate_instances(instance_ids=iids)
     else:
         print "SHUTDOWN", iids
-        if not opts.dry_run:
+        if not opts.dry_run and iids:
             conn = get_ec2_conn(conf)
             cancel_spot_requests_from_instance_ids(conn, instance_ids=iids)
             conn.stop_instances(instance_ids=iids)
