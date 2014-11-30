@@ -17,7 +17,6 @@
 import os, time, datetime, calendar, urllib2
 import boto, boto.sqs, boto.s3, boto.ec2
 import boto.utils
-import paracurl
 from brenda import utils
 from brenda.error import ValueErrorRetry
 from brenda.ami import AMI_ID
@@ -74,6 +73,8 @@ def s3_get(conf, s3url, dest, etag=None):
     tuple == paracurl.PC_ERR_ETAG_MATCH.  Returns tuple of
     (file_length, etag).
     """
+    import paracurl
+
     paracurl_kw = {
         'max_threads' : int(conf.get('CURL_MAX_THREADS', '16')),
         'n_retries' : int(conf.get('CURL_N_RETRIES', '4')),
